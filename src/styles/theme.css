@@ -1,0 +1,20 @@
+/* 关键：Element Plus 暗黑通过 html.dark 触发（它的 dark css-vars 也是这么设计的） */
+html.dark {
+  color-scheme: dark;
+}
+
+/* 你自己也可以补充一些全局变量 */
+:root {
+  --app-bg: #f6f7fb;
+  --app-text: #111827;
+}
+
+html.dark {
+  --app-bg: #0b1220;
+  --app-text: #e5e7eb;
+}
+
+body {
+  background: var(--app-bg);
+  color: var(--app-text);
+}
