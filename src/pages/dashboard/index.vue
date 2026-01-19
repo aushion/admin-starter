@@ -2,6 +2,11 @@
   <div style="padding:16px">
     <h2>Console（主控台）</h2>
 
+    <p style="margin:8px 0 12px;color:#6b7280;font-size:13px">
+      当前账号：{{ currentUser.name }}（{{ currentUser.roles.join(', ') }}）
+      ｜ 权限：{{ currentPerms.join(', ') || '无' }}
+    </p>
+
     <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
       <label>
         关键词：
@@ -17,8 +22,20 @@
         </select>
       </label>
 
-      <button @click="openMapScreen">打开地图大屏</button>
-      <button @click="submit">查询并同步到地图</button>
+      <el-button
+        type="primary"
+        v-permission="'dashboard:open-map'"
+        @click="openMapScreen"
+      >
+        打开地图大屏
+      </el-button>
+      <el-button
+        type="success"
+        v-permission.disable="'dashboard:query'"
+        @click="submit"
+      >
+        查询并同步到地图
+      </el-button>
     </div>
 
     <div style="margin-top:12px">
@@ -29,9 +46,10 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onBeforeUnmount, reactive, ref } from 'vue';
+import { onMounted, onBeforeUnmount, reactive, ref, computed } from 'vue';
 import { createDualChannel } from '@/shared/channel';
 import type { DualMsg, Filters } from '@/shared/protocol';
+import { usePermissionStore } from '@/store/permission';
 
 const ch = createDualChannel();
 const selectedId = ref<string>('');
@@ -66,6 +84,10 @@ function submit() {
   const requestId = makeRequestId();
   ch.send({ type: 'QUERY', payload: { requestId, filters } });
 }
+
+const permission = usePermissionStore();
+const currentUser = computed(() => permission.profile);
+const currentPerms = computed(() => permission.permissions);
 
 const off = ch.on((msg: DualMsg) => {
   if (msg.type === 'MAP_READY') {

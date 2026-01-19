@@ -11,9 +11,15 @@ import 'element-plus/dist/index.css'
 import 'element-plus/theme-chalk/dark/css-vars.css'
 
 import '@/styles/theme.css'
+import { permissionDirective } from './directives/permission'
 
-createApp(App)
+const app = createApp(App)
+
+app
   .use(createPinia())
   .use(router)
   .use(ElementPlus)
-  .mount('#app')
+
+app.directive('permission', permissionDirective)
+
+app.mount('#app')

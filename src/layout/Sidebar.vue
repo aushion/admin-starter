@@ -26,12 +26,13 @@
 </template>
 
 <script setup lang="ts">
-import { computed, defineComponent,resolveComponent, h, type PropType } from 'vue'
+import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApp } from '../composables/useApp'
 import { routes } from '../router/routes'
 import type { RouteRecordRaw } from 'vue-router'
 import SidebarItem from './MenuItem.vue'
+import { usePermissionStore } from '@/store/permission'
 
 type MenuItem = {
   key: string
@@ -43,6 +44,7 @@ type MenuItem = {
 
 const route = useRoute()
 const { sidebarCollapsed } = useApp()
+const permission = usePermissionStore()
 
 const collapsed = computed(() => sidebarCollapsed.value)
 const activePath = computed(() => route.path)
@@ -84,10 +86,7 @@ function buildMenuTree(records: RouteRecordRaw[], base = ''): MenuItem[] {
     // 目录节点：只有 children，没有 component 的也可当目录
     const title = getTitle(r)
     const icon = getIcon(r)
-
-    console.log(icon, 'icon');
     
-
     // 如果这个路由本身没有 title，但子节点有（极少），也可以选择隐藏父级
     // 这里按“只要有 children 就展示”处理
     if (children.length > 0) {
@@ -113,7 +112,25 @@ function buildMenuTree(records: RouteRecordRaw[], base = ''): MenuItem[] {
       })
     }
   }
-  console.log(res,'res')
+  return res
+}
+
+function filterByPermission(records: RouteRecordRaw[]): RouteRecordRaw[] {
+  const res: RouteRecordRaw[] = []
+
+  for (const r of records) {
+    if (!r) continue
+    const children = Array.isArray(r.children) ? filterByPermission(r.children) : []
+    const allowed = permission.canAccess(r.meta)
+
+    if (!allowed && children.length === 0) continue
+
+    res.push({
+      ...r,
+      children,
+    })
+  }
+
   return res
 }
 
@@ -122,7 +139,7 @@ function buildMenuTree(records: RouteRecordRaw[], base = ''): MenuItem[] {
  */
 const menus = computed<MenuItem[]>(() => {
   const root = routes.find(r => r.path === '/')
-  const children = (root?.children || []).filter(r => !isHidden(r))
+  const children = filterByPermission((root?.children || []).filter(r => !isHidden(r)))
   return buildMenuTree(children, '')
 })
 
