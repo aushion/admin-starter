@@ -1,5 +1,5 @@
 <template>
-  <div class="h-screen w-screen flex bg-[var(--app-bg)] text-[var(--app-text)]">
+  <div class="flex bg-[var(--app-bg)] text-[var(--app-text)]">
     <Sidebar />
     <div class="flex-1 flex flex-col min-w-0">
       <Topbar />

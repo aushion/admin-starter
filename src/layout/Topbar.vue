@@ -1,5 +1,5 @@
 <template>
-  <div class="h-12 flex items-center justify-between px-3 border-b border-gray-200 dark:border-gray-700">
+  <div class="h-12 bg-blue flex items-center justify-between px-3 border-b border-gray-200 dark:border-gray-700">
     <div class="font-600">Admin Starter</div>
     <div class="flex items-center gap-2">
       <el-select

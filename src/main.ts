@@ -3,6 +3,7 @@ import { createPinia } from 'pinia'
 import router from './router'
 import App from './App.vue'
 
+import '@/styles/reset.css'
 import 'uno.css'
 
 import ElementPlus from 'element-plus'

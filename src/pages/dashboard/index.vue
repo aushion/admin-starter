@@ -42,6 +42,8 @@
       <strong>地图点选回传：</strong>
       <span>{{ selectedId || '（暂无）' }}</span>
     </div>
+    HelloWorld组件示例：
+    <HelloWorld msg="Welcome to Your Vue.js + TypeScript App!" />
   </div>
 </template>
 
@@ -50,6 +52,7 @@ import { onMounted, onBeforeUnmount, reactive, ref, computed } from 'vue';
 import { createDualChannel } from '@/shared/channel';
 import type { DualMsg, Filters } from '@/shared/protocol';
 import { usePermissionStore } from '@/store/permission';
+import HelloWorld from '@/components/HelloWorld.vue';
 
 const ch = createDualChannel();
 const selectedId = ref<string>('');
