@@ -1,110 +1,98 @@
 <template>
-  <div style="padding:16px">
-    <h2>Console（主控台）</h2>
+  <div style="padding: 16px">
+    <ProTable
+      title="Users"
+      :columns="columns"
+      :request="fetchList"
+      :row-selection="rowSelection"
+      :expand="{ width: 46 }"
+      border
+      stripe
+    >
+      <template #toolbar="{ reload, reset }">
+        <el-button @click="reset">Reset</el-button>
+        <el-button type="primary" @click="reload">Reload</el-button>
+      </template>
 
-    <p style="margin:8px 0 12px;color:#6b7280;font-size:13px">
-      当前账号：{{ currentUser.name }}（{{ currentUser.roles.join(', ') }}）
-      ｜ 权限：{{ currentPerms.join(', ') || '无' }}
-    </p>
-
-    <div style="display:flex; gap:12px; align-items:flex-end; flex-wrap:wrap">
-      <label>
-        关键词：
-        <input v-model="draft.keyword" placeholder="name/id/type..." />
-      </label>
-
-      <label>
-        类型：
-        <select v-model="draft.type">
-          <option value="">全部</option>
-          <option value="A">A</option>
-          <option value="B">B</option>
-        </select>
-      </label>
-
-      <el-button
-        type="primary"
-        v-permission="'dashboard:open-map'"
-        @click="openMapScreen"
-      >
-        打开地图大屏
-      </el-button>
-      <el-button
-        type="success"
-        v-permission.disable="'dashboard:query'"
-        @click="submit"
-      >
-        查询并同步到地图
-      </el-button>
-    </div>
-
-    <div style="margin-top:12px">
-      <strong>地图点选回传：</strong>
-      <span>{{ selectedId || '（暂无）' }}</span>
-    </div>
-    HelloWorld组件示例：
-    <HelloWorld msg="Welcome to Your Vue.js + TypeScript App!" />
+      <template #expand="{ row }">
+        <div style="padding: 12px;">
+          <div><b>Expanded Row</b></div>
+          <div>ID: {{ row.id }}</div>
+          <div>Email: {{ row.email }}</div>
+        </div>
+      </template>
+    </ProTable>
   </div>
 </template>
 
-<script setup lang="ts">
-import { onMounted, onBeforeUnmount, reactive, ref, computed } from 'vue';
-import { createDualChannel } from '@/shared/channel';
-import type { DualMsg, Filters } from '@/shared/protocol';
-import { usePermissionStore } from '@/store/permission';
-import HelloWorld from '@/components/HelloWorld.vue';
-
-const ch = createDualChannel();
-const selectedId = ref<string>('');
-
-const draft = reactive<{ keyword: string; type: string }>({
-  keyword: '',
-  type: '',
-});
-
-function toFilters(): Filters {
-  return {
-    keyword: draft.keyword.trim(),
-    type: draft.type || undefined,
-  };
+<script setup lang="tsx">
+import { ref } from 'vue'
+import ProTable, { type ProColumn, type RequestParams, type RowSelection } from '@/components/ProTable.vue'
+ 
+type User = {
+  id: number
+  name: string
+  email: string
 }
 
-function makeRequestId() {
-  return `${Date.now()}-${Math.random().toString(16).slice(2)}`;
-}
+const selectedKeys = ref<Array<number | string>>([])
 
-function openMapScreen() {
-  // name 固定，避免开一堆地图窗口
-  window.open(
-    '/map-ol',
-    'MapScreen',
-    'popup=yes,width=1400,height=900'
-  );
-}
-
-function submit() {
-  const filters = toFilters();
-  const requestId = makeRequestId();
-  ch.send({ type: 'QUERY', payload: { requestId, filters } });
-}
-
-const permission = usePermissionStore();
-const currentUser = computed(() => permission.profile);
-const currentPerms = computed(() => permission.permissions);
-
-const off = ch.on((msg: DualMsg) => {
-  if (msg.type === 'MAP_READY') {
-    // 地图窗口刚打开/刷新，主窗口给它同步当前 filters
-    ch.send({ type: 'SYNC_STATE', payload: { filters: toFilters() } });
+const rowSelection: RowSelection<User> = {
+  selectedRowKeys: selectedKeys.value,
+  onChange: (keys) => {
+    selectedKeys.value = keys
+    console.log('selected keys:', keys)
   }
-  if (msg.type === 'MAP_SELECT') {
-    selectedId.value = msg.payload.id;
-  }
-});
+}
 
-onMounted(() => {});
-onBeforeUnmount(() => {
-  off?.();
-  ch.close();
-});
+const columns: ProColumn<User>[] = [
+  { title: 'ID', dataIndex: 'id', width: 80, sortable: true },
+  { title: 'Name', dataIndex: 'name', minWidth: 140 },
+  {
+    title: 'Email',
+    dataIndex: 'email',
+    render: ({ cellValue }) => (
+      <el-link href={`mailto:${cellValue}`} type="primary">
+        {cellValue}
+      </el-link>
+    )
+  },
+  {
+    title: 'Actions',
+    key: 'actions',
+    width: 220,
+    render: ({ row }) => (
+      <>
+        <el-button size="small" onClick={() => handleEdit(row)}>Edit</el-button>
+        <el-button size="small" type="danger" onClick={() => handleDelete(row)}>Delete</el-button>
+      </>
+    )
+  }
+]
+
+// mock request
+async function fetchList(params: RequestParams) {
+  console.log('request params:', params)
+  const { currentPage, pageSize } = params
+  const total = 25
+
+  const data: User[] = Array.from({ length: pageSize }).map((_, i) => {
+    const id = (currentPage - 1) * pageSize + i + 1
+    return {
+      id,
+      name: `User ${id}`,
+      email: `user${id}@example.com`
+    }
+  })
+
+  return { data, total }
+}
+
+function handleEdit(row: User) {
+  console.log('edit:', row)
+}
+
+function handleDelete(row: User) {
+  console.log('delete:', row)
+}
 </script>

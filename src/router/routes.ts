@@ -42,12 +42,12 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/charts/index.vue'),
         meta: { title: 'ECharts', icon: 'i-carbon-chart-bar', keepAlive: true, permissions: ['charts:view'] },
       },
-      // {
-      //   path: 'map-ol',
-      //   name: 'MapOL',
-      //   component: () => import('@/pages/map-ol/index.vue'),
-      //   meta: { title: 'OpenLayers', icon: 'i-carbon-map' },
-      // },
+      {
+        path: 'icon',
+        name: 'Icon',
+        component: () => import('@/pages/icons/index.vue'),
+        meta: { title: '图标', icon: 'i-carbon-document-export' },
+      },
       {
         path: 'map-cesium',
         name: 'MapCesium',
