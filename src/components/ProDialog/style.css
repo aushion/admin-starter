@@ -1,0 +1,7 @@
+.pro-dialog__body {
+  min-height: 40px;
+}
+
+.pro-dialog__empty {
+  padding: 12px 0;
+}

@@ -44,7 +44,7 @@
 <script setup lang="ts">
 import { reactive } from 'vue'
 import { ElInputNumber } from 'element-plus'
-import ProForm, { type ProFormItem } from './ProForm.vue'
+import ProForm, { type ProFormItem } from './ProForm'
 
 const formModel = reactive({
   name: '张三',

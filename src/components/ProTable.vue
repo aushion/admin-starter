@@ -88,9 +88,27 @@ import {
 } from "vue";
 import { ElTableColumn, ElTag } from "element-plus";
 import type { TableInstance } from "element-plus";
-
+defineOptions({ name: 'ProTable' })
 /* ===================== Types ===================== */
+export interface ProTableProps {
+  title?: string
+  columns: ProColumn<any>[]
 
+  rowKey?: string | ((row: any) => string | number)
+
+  dataSource?: any[]
+  loading?: boolean
+  pagination?: false | Partial<ProPagination>
+
+  request?: RequestFn<any> | null
+  requestExtra?: Record<string, any>
+  manual?: boolean
+
+  rowSelection?: RowSelection<any> | null
+  expand?: ExpandConfig | null
+
+  tableProps?: Record<string, any>
+}
 export type ValueEnum =
   | Record<
       string | number,
@@ -189,31 +207,7 @@ export interface ExpandConfig {
 /* ===================== Props / Emits ===================== */
 
 const props = withDefaults(
-  defineProps<{
-    title?: string;
-    columns: ProColumn<any>[];
-
-    rowKey?: string | ((row: any) => string | number);
-
-    // controlled mode
-    dataSource?: any[];
-    loading?: boolean;
-    pagination?: false | Partial<ProPagination>;
-
-    // request mode
-    request?: RequestFn<any> | null;
-    requestExtra?: Record<string, any>;
-
-    // request control
-    manual?: boolean;
-
-    // selection/expand
-    rowSelection?: RowSelection<any> | null;
-    expand?: ExpandConfig | null;
-
-    // el-table passthrough
-    tableProps?: Record<string, any>;
-  }>(),
+  defineProps<ProTableProps>(),
   {
     title: "",
     rowKey: "id",

@@ -44,8 +44,8 @@
 
 <script setup lang="ts">
 import { ref, reactive } from 'vue'
-import ProTable, { type ProColumn, type RequestParams } from '@/components/ProTable.vue'
-import ProForm, { type ProFormItem } from '@/components/ProForm.vue'
+import ProTable, { type ProColumn, type RequestParams } from '@/components/ProTable'
+import ProForm, { type ProFormItem } from '@/components/ProForm'
 
 type UserRow = {
   id: number

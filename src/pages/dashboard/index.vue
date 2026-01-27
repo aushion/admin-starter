@@ -1,13 +1,14 @@
 <template>
   <div style="padding: 16px">
     <ProTable
-      title="Users"
-      :columns="columns"
-      :request="fetchList"
-      :row-selection="rowSelection"
-      :expand="{ width: 46 }"
-      border
-      stripe
+        title="Users"
+        :columns="columns"
+        :request="fetchList"
+        
+        :row-selection="rowSelection"
+        :expand="{ width: 46 }"
+        border
+        stripe
     >
       <template #toolbar="{ reload, reset }">
         <el-button @click="reset">Reset</el-button>
@@ -27,8 +28,8 @@
 
 <script setup lang="tsx">
 import { ref } from 'vue'
-import ProTable, { type ProColumn, type RequestParams, type RowSelection } from '@/components/ProTable.vue'
- 
+import ProTable, { type ProColumn, type RequestParams, type RowSelection } from '@/components/ProTable'
+
 type User = {
   id: number
   name: string
@@ -52,22 +53,22 @@ const columns: ProColumn<User>[] = [
     title: 'Email',
     dataIndex: 'email',
     render: ({ cellValue }) => (
-      <el-link href={`mailto:${cellValue}`} type="primary">
-        {cellValue}
+        <el-link href={`mailto:${cellValue}`} type="primary">
+      {cellValue}
       </el-link>
-    )
-  },
-  {
-    title: 'Actions',
-    key: 'actions',
+)
+},
+{
+  title: 'Actions',
+      key: 'actions',
     width: 220,
     render: ({ row }) => (
-      <>
+    <>
         <el-button size="small" onClick={() => handleEdit(row)}>Edit</el-button>
-        <el-button size="small" type="danger" onClick={() => handleDelete(row)}>Delete</el-button>
-      </>
-    )
-  }
+<el-button size="small" type="danger" onClick={() => handleDelete(row)}>Delete</el-button>
+</>
+)
+}
 ]
 
 // mock request
