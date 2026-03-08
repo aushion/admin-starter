@@ -65,10 +65,10 @@ function pickCluster(): ClusterSeed {
   const r = Math.random()
   let acc = 0
   for (let i = 0; i < BEIJING_CLUSTERS.length; i++) {
-    acc += BEIJING_CLUSTERS[i].ratio
-    if (r <= acc) return BEIJING_CLUSTERS[i]
+    acc += (BEIJING_CLUSTERS[i] as ClusterSeed).ratio
+    if (r <= acc) return BEIJING_CLUSTERS[i] as ClusterSeed
   }
-  return BEIJING_CLUSTERS[BEIJING_CLUSTERS.length - 1]
+  return BEIJING_CLUSTERS[BEIJING_CLUSTERS.length - 1] as ClusterSeed
 }
 
 function generateBeijingRandomPoints(count: number): HeatPoint[] {
