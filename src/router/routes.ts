@@ -11,18 +11,18 @@ export const routes: RouteRecordRaw[] = [
   },
 
   // ✅ 大屏：独立路由树（不带菜单栏）
-  {
-    path: '/map-ol',
-    component: BlankLayout,
-    children: [
-      {
-        path: '',
-        name: 'MapScreen',
-        component: () => import('@/pages/map-ol/index.vue'),
-        meta: { title: '地图大屏', layout: 'blank', permissions: ['map:screen'] },
-      },
-    ],
-  },
+  // {
+  //   path: '/map-ol',
+  //   component: BlankLayout,
+  //   children: [
+  //     {
+  //       path: '',
+  //       name: 'MapScreen',
+  //       component: () => import('@/pages/map-ol/index.vue'),
+  //       meta: { title: '地图大屏', layout: 'blank', permissions: ['map:screen'] },
+  //     },
+  //   ],
+  // },
 
   // ✅ 后台：原有路由树（带 AdminLayout）
   {
@@ -53,6 +53,12 @@ export const routes: RouteRecordRaw[] = [
         name: 'MapCesium',
         component: () => import('@/pages/map-cesium/index.vue'),
         meta: { title: 'Cesium', icon: 'i-carbon-earth', permissions: ['map:cesium'] },
+      },
+       {
+        path: 'map-ol',
+        name: 'MapOl',
+        component: () => import('@/pages/map-ol/index.vue'),
+        meta: { title: 'OpenLayers', icon: 'i-carbon-earth', permissions: ['map:ol'] },
       },
       {
         path: 'flow',

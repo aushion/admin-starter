@@ -85,7 +85,7 @@ export default defineComponent({
       layout: 'total, sizes, prev, pager, next, jumper',
     }) },
 
-    request: { type: Function as PropType<RequestFn<any> | null>, default: null },
+    request: { type: Function as unknown as PropType<RequestFn<any> | null>, default: null },
     requestExtra: { type: Object as PropType<Record<string, any>>, default: () => ({}) },
     manual: { type: Boolean, default: false },
 
@@ -139,6 +139,8 @@ export default defineComponent({
     const visibleColumns = computed(() => (props.columns ?? []).filter((c) => c.hideInTable !== true))
     const dataComputed = computed(() => (props.request ? state.innerData : props.dataSource))
     const loadingComputed = computed(() => (props.request ? state.innerLoading : props.loading))
+    const hasSelectionColumn = computed(() => visibleColumns.value.some((c) => c.type === 'selection'))
+    const hasExpandColumn = computed(() => visibleColumns.value.some((c) => c.type === 'expand'))
 
     function getRowKeyValue(row: any): string | number {
       if (props.rowSelection?.getRowKey) return props.rowSelection.getRowKey(row)
@@ -262,18 +264,18 @@ export default defineComponent({
     }
 
     function onSelectionChange(rows: any[]) {
-      if (!props.rowSelection) return
       const keys = rows.map(getRowKeyValue)
       state.innerSelectedKeys = keys
       emit('update:selectedRowKeys', keys)
       emit('selection-change', { keys, rows })
-      props.rowSelection.onChange?.(keys, rows)
+      props.rowSelection?.onChange?.(keys, rows)
     }
 
     /* ---------- JSX ProCol (recursive) ---------- */
 
     const ProCol = (pc: { col: ProColumn<any> }) => {
       const col = pc.col
+      const colType = col.type
       const hasChildren = Array.isArray(col.children) && col.children.length > 0
       const isLeaf = !hasChildren
 
@@ -287,14 +289,71 @@ export default defineComponent({
       }
 
       const columnProps: any = {
-        prop: isLeaf ? col.dataIndex : undefined,
+        type: colType,
+        prop: isLeaf && !colType ? col.dataIndex : undefined,
         label: col.title,
         width: col.width,
         minWidth: col.minWidth,
         fixed: col.fixed,
         align: col.align ?? 'left',
-        sortable: isLeaf && col.sortable && col.dataIndex ? 'custom' : false,
+        sortable: isLeaf && col.sortable && col.dataIndex && !colType ? 'custom' : false,
         showOverflowTooltip: col.ellipsis ?? col.showOverflowTooltip,
+      }
+
+      if (colType === 'selection') {
+        return (
+          <ElTableColumn
+            type="selection"
+            width={col.width ?? props.rowSelection?.columnWidth ?? 46}
+            fixed={(col.fixed ?? props.rowSelection?.fixed) as any}
+            selectable={(col.selectable ?? props.rowSelection?.selectable) as any}
+            reserveSelection={col.reserveSelection ?? props.rowSelection?.reserveSelection ?? true}
+          />
+        )
+      }
+
+      if (colType === 'index') {
+        return (
+          <ElTableColumn
+            type="index"
+            label={col.title}
+            width={col.width}
+            minWidth={col.minWidth}
+            fixed={col.fixed}
+            align={col.align ?? 'center'}
+            index={col.index as any}
+            showOverflowTooltip={col.ellipsis ?? col.showOverflowTooltip}
+          />
+        )
+      }
+
+      if (colType === 'expand') {
+        const renderExpand = (scope: any) => {
+          if (!scope?.row) return null
+
+          if (typeof col.render === 'function') {
+            const cellValue = col.dataIndex ? getByPath(scope.row, col.dataIndex) : undefined
+            return col.render({
+              row: scope.row,
+              column: scope.column,
+              $index: scope.$index,
+              cellValue,
+            })
+          }
+
+          const slotFn = cellSlotName && (slots as any)[cellSlotName]
+          if (slotFn) return slotFn(scope)
+          if (slots.expand) return slots.expand(scope)
+          return null
+        }
+
+        return (
+          <ElTableColumn type="expand" width={col.width ?? props.expand?.width ?? 46} fixed={(col.fixed ?? props.expand?.fixed) as any}>
+            {{
+              default: (scope: any) => renderExpand(scope),
+            }}
+          </ElTableColumn>
+        )
       }
 
       if (hasChildren) {
@@ -374,11 +433,11 @@ export default defineComponent({
           rowKey={props.rowKey as any}
           v-loading={loadingComputed.value as any}
           {...props.tableProps}
-          onSortChange={onSortChange as any}
-          onSelectionChange={onSelectionChange as any}
+          on-sort-change={onSortChange as any}
+          on-selection-change={onSelectionChange as any}
         >
           {/* selection */}
-          {props.rowSelection && (
+          {props.rowSelection && !hasSelectionColumn.value && (
             <ElTableColumn
               type="selection"
               width={props.rowSelection.columnWidth ?? 46}
@@ -389,7 +448,7 @@ export default defineComponent({
           )}
 
           {/* expand */}
-          {props.expand && (
+          {props.expand && !hasExpandColumn.value && (
             <ElTableColumn type="expand" width={props.expand.width ?? 46} fixed={props.expand.fixed as any}>
               {{
                 default: (scope: any) => slots.expand?.(scope),
@@ -415,8 +474,8 @@ export default defineComponent({
               total={pageConfig.value.total}
               pageSizes={pageConfig.value.pageSizes}
               layout={pageConfig.value.layout}
-              onSizeChange={setPageSize}
-              onCurrentChange={setPage}
+              on-size-change={setPageSize}
+              on-current-change={setPage}
             />
           </div>
         )}

@@ -7,6 +7,9 @@ export type ProColumnValueType = 'text' | 'tag' | 'date' | 'datetime' | 'money' 
 export interface ProColumn<T = any> {
   title: string
 
+  /** 特殊列类型：selection / index / expand */
+  type?: 'selection' | 'index' | 'expand'
+
   /** 支持 'a.b.c' */
   dataIndex?: keyof T & string
   /** dataIndex 为空时（如 Actions）请提供 key */
@@ -21,6 +24,13 @@ export interface ProColumn<T = any> {
   showOverflowTooltip?: boolean
 
   hideInTable?: boolean
+
+  /** type=index 时可自定义序号 */
+  index?: number | ((index: number) => number | string)
+
+  /** type=selection 时可单列配置选择行为 */
+  reserveSelection?: boolean
+  selectable?: (row: T, index: number) => boolean
 
   valueType?: ProColumnValueType
   valueEnum?: ValueEnum

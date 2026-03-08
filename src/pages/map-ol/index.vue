@@ -1,242 +1,232 @@
-<template>
-  <div style="width:100vw;height:100vh;position:relative;overflow:hidden">
-    <div ref="mapEl" style="width:100%;height:100%"></div>
+<script setup lang="ts">
+import { computed, onMounted, onUnmounted, ref } from 'vue'
+import 'ol/ol.css'
+import { unByKey } from 'ol/Observable'
+import type { EventsKey } from 'ol/events'
+import { Fill, RegularShape, Stroke, Style } from 'ol/style'
+import { createMapEngine, provideMapEngine } from '@/composables/ol/engine/context'
+import { useOlMap } from '@/composables/ol/useOlMap'
+import { useOlHeatPoints, type HeatPoint } from '@/composables/ol/useOlHeatPoints'
 
-    <div style="position:absolute;left:12px;top:12px;background:rgba(0,0,0,.55);color:#fff;
-                padding:10px 12px;border-radius:10px;max-width:45vw;font-size:12px">
-      <div><strong>MapScreen（大屏）</strong></div>
-      <div>filters: {{ JSON.stringify(filters) }}</div>
-      <div>points: {{ pointCount }}</div>
-      <div v-if="loading">loading...</div>
+const engine = createMapEngine()
+provideMapEngine(engine)
+
+const mapEl = ref<HTMLElement | null>(null)
+
+const POINT_LAYER_ZOOM = 12
+const POINT_COUNT = 10000
+
+const { map } = useOlMap(mapEl, {
+  // xyzUrl: 'http://localhost:8080/tiles/{z}/{x}/{y}.png',
+  view: {
+    zoom: 10,
+    center: [12958412, 4852030], // 北京
+  },
+})
+
+const points = ref<HeatPoint[]>([])
+
+type ClusterSeed = {
+  lon: number
+  lat: number
+  ratio: number
+  sigmaKm: number
+  peak: number
+}
+
+const BEIJING_CLUSTERS: ClusterSeed[] = [
+  { lon: 116.4074, lat: 39.9042, ratio: 0.18, sigmaKm: 4.8, peak: 1.0 },
+  { lon: 116.4551, lat: 39.9220, ratio: 0.20, sigmaKm: 6.5, peak: 0.95 },
+  { lon: 116.2970, lat: 39.9593, ratio: 0.16, sigmaKm: 6.2, peak: 0.92 },
+  { lon: 116.3339, lat: 39.7267, ratio: 0.14, sigmaKm: 5.5, peak: 0.86 },
+  { lon: 116.1767, lat: 39.7353, ratio: 0.10, sigmaKm: 7.0, peak: 0.72 },
+  { lon: 116.6535, lat: 40.1289, ratio: 0.08, sigmaKm: 7.5, peak: 0.68 },
+  { lon: 116.1076, lat: 40.2208, ratio: 0.07, sigmaKm: 8.0, peak: 0.62 },
+  { lon: 116.8434, lat: 39.9284, ratio: 0.07, sigmaKm: 8.5, peak: 0.60 },
+]
+
+function gaussianRandom(): number {
+  let u = 0
+  let v = 0
+  while (u === 0) u = Math.random()
+  while (v === 0) v = Math.random()
+  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
+}
+
+function kmToLat(km: number) {
+  return km / 111
+}
+
+function kmToLon(km: number, lat: number) {
+  return km / (111 * Math.cos((lat * Math.PI) / 180))
+}
+
+function pickCluster(): ClusterSeed {
+  const r = Math.random()
+  let acc = 0
+  for (let i = 0; i < BEIJING_CLUSTERS.length; i++) {
+    acc += BEIJING_CLUSTERS[i].ratio
+    if (r <= acc) return BEIJING_CLUSTERS[i]
+  }
+  return BEIJING_CLUSTERS[BEIJING_CLUSTERS.length - 1]
+}
+
+function generateBeijingRandomPoints(count: number): HeatPoint[] {
+  const data: HeatPoint[] = new Array(count)
+
+  for (let i = 0; i < count; i++) {
+    const c = pickCluster()
+
+    const dxKm = gaussianRandom() * c.sigmaKm
+    const dyKm = gaussianRandom() * c.sigmaKm
+
+    const lon = c.lon + kmToLon(dxKm, c.lat)
+    const lat = c.lat + kmToLat(dyKm)
+
+    const dist = Math.sqrt(dxKm * dxKm + dyKm * dyKm)
+    const decay = Math.exp(-(dist * dist) / (2 * c.sigmaKm * c.sigmaKm))
+    const localNoise = 0.15 + Math.random() * 0.25
+    const base = c.peak * decay + localNoise
+    const normalized = Math.max(0.03, Math.min(1, base))
+
+    data[i] = {
+      id: i + 1,
+      lon,
+      lat,
+      weight: normalized,
+      clusterPeak: c.peak,
+    }
+  }
+
+  const noiseCount = Math.floor(count * 0.06)
+  for (let i = 0; i < noiseCount; i++) {
+    const idx = Math.floor(Math.random() * count)
+    const p = data[idx] as HeatPoint
+    p.weight = Math.max(0.02, Math.min(0.2, Math.random() * 0.18))
+  }
+
+  return data
+}
+
+function refresh() {
+  points.value = generateBeijingRandomPoints(POINT_COUNT)
+}
+
+const pointStyle = new Style({
+  image: new RegularShape({
+    points: 5,
+    radius: 7,
+    radius2: 3,
+    angle: 0,
+    fill: new Fill({ color: 'rgba(239, 68, 68, 0.95)' }),
+    stroke: new Stroke({ color: 'rgba(127, 29, 29, 0.95)', width: 1.2 }),
+  }),
+})
+
+const heat = useOlHeatPoints({
+  points,
+  showHeat: true,
+  showPoint: true,
+  radius: 14,
+  blur: 22,
+  pointStyle,
+  gradient: ['#1d4ed8', '#0ea5e9', '#22c55e', '#fde047', '#f97316', '#dc2626'],
+  weightFn: (p) => Math.max(0.01, Math.min(1, Number(p.weight ?? 0.1))),
+})
+
+const radiusModel = computed<number>({
+  get: () => heat.radius.value,
+  set: (v) => {
+    heat.radius.value = Number(v)
+  },
+})
+
+const blurModel = computed<number>({
+  get: () => heat.blur.value,
+  set: (v) => {
+    heat.blur.value = Number(v)
+  },
+})
+
+function applyBalancedPreset() {
+  radiusModel.value = 14
+  blurModel.value = 22
+}
+
+const currentZoom = computed(() => map.value?.getView().getZoom() ?? 0)
+const pointLayerVisible = computed(() => currentZoom.value >= POINT_LAYER_ZOOM)
+
+function syncLayerByZoom() {
+  heat.showPoint.value = pointLayerVisible.value
+  heat.showHeat.value = true
+}
+
+let moveEndKey: EventsKey | null = null
+
+onMounted(() => {
+  refresh()
+  syncLayerByZoom()
+
+  const olMap = map.value
+  if (!olMap) return
+
+  moveEndKey = olMap.on('moveend', syncLayerByZoom)
+})
+
+onUnmounted(() => {
+  if (moveEndKey) {
+    unByKey(moveEndKey)
+    moveEndKey = null
+  }
+})
+</script>
+
+<template>
+  <div class="relative h-screen w-full overflow-hidden">
+    <div ref="mapEl" class="h-full w-full"></div>
+
+    <div class="absolute left-4 top-4 z-20 w-84 max-w-[calc(100vw-2rem)]">
+      <ElCard class="rounded-4 border-0 bg-white/88 shadow-2xl shadow-slate-900/12 backdrop-blur-md">
+        <div class="flex items-center justify-between gap-3">
+          <div class="text-sm font-semibold text-slate-700">北京热力图控制台</div>
+          <ElTag size="small" :type="pointLayerVisible ? 'success' : 'info'">
+            {{ pointLayerVisible ? '点图层已叠加' : '仅热力图' }}
+          </ElTag>
+        </div>
+
+        <div class="mt-3 flex items-center justify-between gap-3">
+          <div class="flex items-center gap-2">
+            <ElButton type="primary" size="small" @click="refresh()">刷新 {{ POINT_COUNT }} 点</ElButton>
+            <ElButton size="small" @click="applyBalancedPreset()">均衡预设</ElButton>
+          </div>
+          <div class="text-xs text-slate-500">Zoom {{ currentZoom.toFixed(2) }}</div>
+        </div>
+
+        <ElDivider class="my-3" />
+
+        <div class="space-y-4">
+          <div>
+            <div class="mb-1 flex items-center justify-between text-xs text-slate-600">
+              <span>Radius</span>
+              <span class="font-semibold text-slate-800">{{ radiusModel }}</span>
+            </div>
+            <ElSlider v-model="radiusModel" :min="4" :max="40" :step="1" size="small" />
+          </div>
+
+          <div>
+            <div class="mb-1 flex items-center justify-between text-xs text-slate-600">
+              <span>Blur</span>
+              <span class="font-semibold text-slate-800">{{ blurModel }}</span>
+            </div>
+            <ElSlider v-model="blurModel" :min="4" :max="60" :step="1" size="small" />
+          </div>
+
+          <div class="rounded-3 bg-slate-50 px-3 py-2 text-xs text-slate-600 leading-5">
+            热力图常驻显示；当缩放级别达到 <span class="font-semibold">{{ POINT_LAYER_ZOOM }}</span> 时自动叠加点图层。
+            当前点数 <span class="font-semibold">{{ points.length }}</span>。
+          </div>
+        </div>
+      </ElCard>
     </div>
   </div>
 </template>
-
-<script setup lang="ts">
-import { onMounted, onBeforeUnmount, ref, shallowRef } from 'vue';
-import { createDualChannel } from '@/shared/channel';
-import type { DualMsg, Filters } from '@/shared/protocol';
-import { throttle } from '@/shared/throttle';
-import { extent3857ToBbox4326 } from '@/shared/geo';
-import { fetchPoints } from '@/services/mapPoints';
-
-// OpenLayers
-import Map from 'ol/Map';
-import View from 'ol/View';
-import TileLayer from 'ol/layer/Tile';
-import VectorLayer from 'ol/layer/Vector';
-import WebGLPointsLayer from 'ol/layer/WebGLPoints';
-import XYZ from 'ol/source/XYZ';
-import VectorSource from 'ol/source/Vector';
-import Feature from 'ol/Feature';
-import Point from 'ol/geom/Point';
-import { fromLonLat } from 'ol/proj';
-import type { Extent } from 'ol/extent';
-import { Style, Circle as CircleStyle, Fill, Stroke } from 'ol/style';
-
-const mapEl = ref<HTMLDivElement | null>(null);
-const map = shallowRef<Map | null>(null);
-
-const ch = createDualChannel();
-
-const filters = ref<Filters>({});
-const loading = ref(false);
-const pointCount = ref(0);
-
-let latestRequestId = '';
-let aborter: AbortController | null = null;
-
-// 海量点层（WebGL）
-const pointsSource = new VectorSource({ wrapX: false });
-const pointsLayer = new WebGLPointsLayer({
-  source: pointsSource,
-  // WebGLPoints 的样式是“表达式风格”
-  // 这里用圆点示例：按 type 上色（你可按业务改）
-  style: {
-    symbol: {
-      symbolType: 'circle',
-      size: [
-        'interpolate', ['linear'], ['zoom'],
-        4, 3,
-        10, 6,
-        14, 10
-      ],
-      color: [
-        'match', ['get', 'type'],
-        'A', 'rgba(0,180,255,0.8)',
-        'B', 'rgba(255,120,0,0.8)',
-        'rgba(0,255,140,0.75)'
-      ],
-      opacity: 1,
-    },
-  } as any,
-});
-
-// 高亮层（少量要素，用普通 VectorLayer 画，保证图标/描边效果）
-const highlightSource = new VectorSource({ wrapX: false });
-const highlightLayer = new VectorLayer({
-  source: highlightSource,
-  style: new Style({
-    image: new CircleStyle({
-      radius: 10,
-      fill: new Fill({ color: 'rgba(255,255,0,0.25)' }),
-      stroke: new Stroke({ color: 'rgba(255,255,0,0.95)', width: 2 }),
-    }),
-  }),
-});
-
-function initMap() {
-  const base = new TileLayer({
-    source: new XYZ({
-      // 你换成你内网 XYZ
-      url: 'http://localhost:8080/xyz/{z}/{x}/{y}.png',
-      // projection 默认跟 view 走 (EPSG:3857)
-    }),
-  });
-
-  map.value = new Map({
-    target: mapEl.value as HTMLDivElement,
-    layers: [base, pointsLayer, highlightLayer],
-    view: new View({
-      projection: 'EPSG:3857',
-      center: [12698529, 2577776], // 随便给个中心，你改成你们默认
-      zoom: 10,
-    }),
-  });
-
-  // 点选：回传 id + 在本地高亮
-  map.value.on('singleclick', (evt) => {
-    const hit = map.value!.forEachFeatureAtPixel(evt.pixel, (feat) => feat);
-    if (!hit) return;
-
-    const id = String(hit.get('id') ?? '');
-    if (id) {
-      ch.send({ type: 'MAP_SELECT', payload: { id } });
-      highlightFeature(hit as Feature);
-    }
-  });
-
-  // moveend 触发 bbox 查询（节流）
-  const onMoveEnd = throttle(() => {
-    loadByViewport();
-  }, 350);
-
-  map.value.on('moveend', onMoveEnd);
-}
-
-function getExtent3857(): Extent | null {
-  const m = map.value;
-  if (!m) return null;
-  return m.getView().calculateExtent(m.getSize());
-}
-
-function highlightFeature(feat: Feature) {
-  const geom = feat.getGeometry();
-  if (!geom) return;
-
-  highlightSource.clear();
-  const hf = new Feature({
-    id: feat.get('id'),
-    geometry: geom.clone(),
-  });
-  highlightSource.addFeature(hf);
-}
-
-async function loadByViewport() {
-  if (!filters.value || Object.keys(filters.value).length === 0) return;
-  const m = map.value;
-  if (!m) return;
-
-  const extent = getExtent3857();
-  if (!extent) return;
-
-  // 取消前一次请求
-  aborter?.abort();
-  aborter = new AbortController();
-
-  loading.value = true;
-
-  // 默认把 bbox 转成 4326 发给后端（常见 lon/lat）
-  const bbox4326 = extent3857ToBbox4326(extent);
-
-  const rid = latestRequestId;
-
-  try {
-    const rows = await fetchPoints({
-      filters: filters.value,
-      bbox4326,
-      signal: aborter.signal,
-    });
-
-    // 丢弃过期响应（用户又发了新查询）
-    if (rid !== latestRequestId) return;
-
-    // 构建 features（几万点：尽量字段轻量）
-    pointsSource.clear(true);
-
-    const feats = rows.map((r) => {
-      const f = new Feature({
-        geometry: new Point(fromLonLat([r.lon, r.lat])), // -> EPSG:3857
-        id: r.id,
-        type: r.type || '',
-      });
-      return f;
-    });
-
-    pointsSource.addFeatures(feats);
-    pointCount.value = feats.length;
-  } catch (e: any) {
-    if (e?.name === 'AbortError') return;
-    console.error(e);
-  } finally {
-    if (rid === latestRequestId) loading.value = false;
-  }
-}
-
-function applyQuery(requestId: string, nextFilters: Filters) {
-  latestRequestId = requestId;
-  filters.value = nextFilters;
-
-  // 清空旧数据 + 高亮
-  pointsSource.clear(true);
-  highlightSource.clear(true);
-  pointCount.value = 0;
-
-  loadByViewport();
-}
-
-const off = ch.on((msg: DualMsg) => {
-  if (msg.type === 'SYNC_STATE') {
-    // 地图刚打开：同步 filters，但不生成新 requestId
-    filters.value = msg.payload.filters;
-    return;
-  }
-
-  if (msg.type === 'QUERY') {
-    applyQuery(msg.payload.requestId, msg.payload.filters);
-    return;
-  }
-
-  if (msg.type === 'FOCUS') {
-    const m = map.value;
-    if (!m) return;
-    const v = m.getView();
-
-    if (msg.payload.coord3857) {
-      v.animate({ center: msg.payload.coord3857, zoom: msg.payload.zoom ?? v.getZoom() ?? 12, duration: 350 });
-    }
-  }
-});
-
-onMounted(() => {
-  initMap();
-  ch.send({ type: 'MAP_READY' });
-});
-
-onBeforeUnmount(() => {
-  off?.();
-  aborter?.abort();
-  ch.close();
-  map.value?.setTarget(undefined as any);
-});
-</script>

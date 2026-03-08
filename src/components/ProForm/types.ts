@@ -32,6 +32,12 @@ export interface ProFormItem {
   component?: any
   componentProps?: Record<string, any>
   options?: any[]
+  render?: (ctx: {
+    model: ProFormModel
+    field: string
+    item: ProFormItem
+    update: (val: any) => void
+  }) => any
 }
 
 export type ProFormModel = Record<string, any>

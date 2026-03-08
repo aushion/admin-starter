@@ -31,6 +31,10 @@ import type { ProFormItem, ProFormProps, ProFormModel } from './types'
 
 type Model = ProFormModel
 
+function isFn(v: any): v is Function {
+  return typeof v === 'function'
+}
+
 function enumOptions(item: ProFormItem): Array<{ value: any; label: string; children?: any[] }> {
   const ve = item.valueEnum
   if (!ve) return []
@@ -46,8 +50,9 @@ function enumOptions(item: ProFormItem): Array<{ value: any; label: string; chil
   })
 }
 
+/** ✅ 稳定 key：不允许随机 key（否则会重建控件导致输入丢失） */
 function itemKey(item: ProFormItem) {
-  return item.field || item.label || Math.random().toString(36).slice(2)
+  return (item as any).key || item.field || item.label
 }
 
 export default defineComponent({
@@ -75,34 +80,55 @@ export default defineComponent({
       typeof props.labelWidth === 'number' ? `${props.labelWidth}px` : props.labelWidth
     )
 
-    const visibleItems = computed(() =>
-      (props.schema ?? []).filter((i) => i.show !== false && i.hidden !== true)
-    )
-
-    function syncFromModelValue() {
-      const next: Model = { ...(props.modelValue || {}) }
-      for (const item of props.schema || []) {
-        if (!item.field) continue
-        if (next[item.field] === undefined && item.defaultValue !== undefined) {
-          next[item.field] = item.defaultValue
-        }
-      }
-      Object.keys(innerModel).forEach((k) => delete innerModel[k])
-      Object.assign(innerModel, next)
+    /** ✅ show/hidden 支持函数联动 */
+    function isVisible(item: ProFormItem) {
+      const show = (item as any).show
+      const hidden = (item as any).hidden
+      const showOk = isFn(show) ? !!show({ model: innerModel }) : show !== false
+      const hiddenOk = isFn(hidden) ? !!hidden({ model: innerModel }) : hidden === true
+      return showOk && !hiddenOk
     }
 
+    /** ✅ disabled/readonly 支持函数联动 */
+    function isDisabled(item: ProFormItem) {
+      const d = (item as any).disabled
+      return isFn(d) ? !!d({ model: innerModel }) : !!d
+    }
+    function isReadonly(item: ProFormItem) {
+      const r = (item as any).readonly
+      return isFn(r) ? !!r({ model: innerModel }) : !!r
+    }
+
+    const visibleItems = computed(() => (props.schema ?? []).filter((i) => isVisible(i)))
+
+    function applyDefaults(next: Model) {
+      for (const item of props.schema || []) {
+        if (!item.field) continue
+        if (next[item.field] === undefined && (item as any).defaultValue !== undefined) {
+          next[item.field] = (item as any).defaultValue
+        }
+      }
+      return next
+    }
+
+    /** ✅ 同步：不 deep watch + 不 delete 清空（避免打断输入/光标抖动） */
     watch(
       () => props.modelValue,
-      syncFromModelValue,
-      { immediate: true, deep: true }
+      (v) => {
+        const next: Model = applyDefaults({ ...(v || {}) } as any)
+        Object.assign(innerModel, next)
+      },
+      { immediate: true }
     )
 
     function commitUpdate() {
       emit('update:modelValue', { ...toRaw(innerModel) })
     }
 
+    /** ✅ 关键：实时同步到 v-model（避免父组件拿不到最新值） */
     function updateField(field: string, value: any) {
       innerModel[field] = value
+      commitUpdate()
     }
 
     function onEnter(item: ProFormItem) {
@@ -117,6 +143,7 @@ export default defineComponent({
     async function submit() {
       const ok = await formRef.value?.validate().catch(() => false)
       if (!ok) return
+      // 已经实时 commit，这里再 commit 也没副作用
       commitUpdate()
       emit('submit', { ...toRaw(innerModel) })
     }
@@ -125,9 +152,8 @@ export default defineComponent({
       const next: Model = {}
       for (const item of props.schema || []) {
         if (!item.field) continue
-        next[item.field] = item.defaultValue !== undefined ? item.defaultValue : undefined
+        next[item.field] = (item as any).defaultValue !== undefined ? (item as any).defaultValue : undefined
       }
-      Object.keys(innerModel).forEach((k) => delete innerModel[k])
       Object.assign(innerModel, next)
       formRef.value?.clearValidate()
       commitUpdate()
@@ -141,9 +167,9 @@ export default defineComponent({
         modelValue: innerModel[item.field],
         'onUpdate:modelValue': (val: any) => updateField(item.field, val),
         ...item.componentProps,
+        disabled: isDisabled(item) || (item.componentProps as any)?.disabled,
+        readonly: isReadonly(item) || (item.componentProps as any)?.readonly,
       }
-
-      // 优先 slot 与自定义组件在 JSX 外处理
 
       if (!item.valueType || item.valueType === 'text') {
         return (
@@ -151,7 +177,11 @@ export default defineComponent({
             {...common}
             clearable
             placeholder={item.placeholder ?? `请输入${item.label ?? ''}`}
-            onKeyup={(e: KeyboardEvent) => e.key === 'Enter' && onEnter(item)}
+            onKeydown={(e: KeyboardEvent | Event) => {
+              if (e instanceof KeyboardEvent && e.key === 'Enter') {
+                onEnter(item)
+              }
+            }}
           />
         )
       }
@@ -161,7 +191,7 @@ export default defineComponent({
           <ElInput
             {...common}
             type="textarea"
-            rows={item.rows ?? 3}
+            rows={(item as any).rows ?? 3}
             placeholder={item.placeholder ?? `请输入${item.label ?? ''}`}
           />
         )
@@ -237,7 +267,7 @@ export default defineComponent({
         return (
           <ElCascader
             {...common}
-            options={item.options ?? enumOptions(item)}
+            options={(item as any).options ?? enumOptions(item)}
             clearable
             placeholder={item.placeholder ?? `请选择${item.label ?? ''}`}
           />
@@ -264,14 +294,69 @@ export default defineComponent({
         >
           <ElRow gutter={props.gutter}>
             {visibleItems.value.map((item) => {
+              const key = itemKey(item)
+              if (!key) {
+                // 开发期提示：避免随机 key
+                console.warn('[ProForm] schema item should have `field` or `key` or `label`:', item)
+              }
+
               const slotName = item.slot
               const fieldSlot = (slots as any)[item.field]
               const namedSlot = slotName ? (slots as any)[slotName] : null
 
               const renderContent = () => {
-                if (namedSlot) return namedSlot({ model: innerModel, field: item.field, item })
-                if (fieldSlot) return fieldSlot({ model: innerModel, field: item.field, item })
+                // slot（Vue风格）
+                if (namedSlot) {
+                  return namedSlot({
+                    model: innerModel,
+                    field: item.field,
+                    item,
+                    value: innerModel[item.field],
+                    setValue: (val: any) => updateField(item.field, val),
+                    disabled: isDisabled(item),
+                    readonly: isReadonly(item),
+                  })
+                }
+                if (fieldSlot) {
+                  return fieldSlot({
+                    model: innerModel,
+                    field: item.field,
+                    item,
+                    value: innerModel[item.field],
+                    setValue: (val: any) => updateField(item.field, val),
+                    disabled: isDisabled(item),
+                    readonly: isReadonly(item),
+                  })
+                }
 
+                // render（JSX 自由渲染）
+                if (typeof item.render === 'function') {
+                  // ✅ 兼容旧签名 update(val)
+                  const legacyCtx = {
+                    model: innerModel,
+                    field: item.field,
+                    item,
+                    update: (val: any) => updateField(item.field, val),
+                  }
+
+                  // ✅ 新标准 ctx：value / setValue / disabled / readonly
+                  const ctx = {
+                    model: innerModel,
+                    field: item.field,
+                    item,
+                    schema: item,
+                    value: innerModel[item.field],
+                    setValue: (val: any) => updateField(item.field, val),
+                    disabled: isDisabled(item),
+                    readonly: isReadonly(item),
+                    update: (val: any) => updateField(item.field, val), // 仍提供
+                  }
+
+                  // 大多数人会用新 ctx，但旧 ctx 也不炸
+                  return (item.render as any)(ctx) ?? (item.render as any)(legacyCtx)
+                }
+
+                // component（自定义组件）
                 if (item.component) {
                   const Comp: any = item.component
                   return (
@@ -279,15 +364,18 @@ export default defineComponent({
                       modelValue={innerModel[item.field]}
                       onUpdate:modelValue={(val: any) => updateField(item.field, val)}
                       {...(item.componentProps || {})}
+                      disabled={isDisabled(item)}
+                      readonly={isReadonly(item)}
                     />
                   )
                 }
 
+                // builtin
                 return renderControl(item)
               }
 
               return (
-                <ElCol key={itemKey(item)} span={item.colSpan ?? props.defaultColSpan}>
+                <ElCol key={key} span={item.colSpan ?? props.defaultColSpan}>
                   <ElFormItem label={item.label} prop={item.field} rules={item.rules}>
                     {renderContent()}
                   </ElFormItem>
