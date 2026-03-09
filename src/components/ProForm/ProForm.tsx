@@ -27,16 +27,20 @@ import {
   ElButton,
 } from 'element-plus'
 import type { FormInstance } from 'element-plus'
-import type { ProFormItem, ProFormProps, ProFormModel } from './types'
-
-type Model = ProFormModel
+import type { ProFormItem, ProFormProps, ProFormModel, ProFormOption } from './types'
+import { useRemoteOptions } from './useRemoteOptions'
 
 function isFn(v: any): v is Function {
   return typeof v === 'function'
 }
 
-function enumOptions(item: ProFormItem): Array<{ value: any; label: string; children?: any[] }> {
-  const ve = item.valueEnum
+/** ✅ 稳定 key：不允许随机 key */
+function itemKey(item: ProFormItem, index: number) {
+  return (item as any).key || item.field || item.label || `__idx_${index}`
+}
+
+// 格式化静态 options / valueEnum
+function formatOptions(ve: any): ProFormOption[] {
   if (!ve) return []
   if (Array.isArray(ve)) {
     if (ve.some((o) => Array.isArray((o as any)?.children))) return ve as any
@@ -50,9 +54,31 @@ function enumOptions(item: ProFormItem): Array<{ value: any; label: string; chil
   })
 }
 
-/** ✅ 稳定 key：不允许随机 key（否则会重建控件导致输入丢失） */
-function itemKey(item: ProFormItem) {
-  return (item as any).key || item.field || item.label
+// 安全获取嵌套值 (如 'user.info.name')
+function getValueByPath(obj: Record<string, any>, path: string) {
+  if (!path || !path.includes('.')) return obj[path]
+  return path.split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), obj)
+}
+
+// 安全设置嵌套值（支持自动创建数组/对象）
+function setValueByPath(obj: Record<string, any>, path: string, value: any) {
+  if (!path) return
+  if (!path.includes('.')) {
+    obj[path] = value
+    return
+  }
+  const keys = path.split('.')
+  const lastKey = keys.pop()!
+  let current = obj as any
+
+  keys.forEach((key, index) => {
+    if (current[key] === undefined || current[key] === null) {
+      const nextKey = keys[index + 1] || lastKey
+      current[key] = !isNaN(Number(nextKey)) ? [] : {}
+    }
+    current = current[key]
+  })
+  current[lastKey] = value
 }
 
 export default defineComponent({
@@ -74,61 +100,95 @@ export default defineComponent({
   setup(props, { emit, expose }) {
     const slots = useSlots()
     const formRef = ref<FormInstance>()
-    const innerModel = reactive<Model>({})
+    const innerModel = reactive<ProFormModel>({})
+
+    let isInitializing = false
 
     const labelWidthPx = computed(() =>
       typeof props.labelWidth === 'number' ? `${props.labelWidth}px` : props.labelWidth
     )
 
-    /** ✅ show/hidden 支持函数联动 */
-    function isVisible(item: ProFormItem) {
-      const show = (item as any).show
-      const hidden = (item as any).hidden
-      const showOk = isFn(show) ? !!show({ model: innerModel }) : show !== false
-      const hiddenOk = isFn(hidden) ? !!hidden({ model: innerModel }) : hidden === true
-      return showOk && !hiddenOk
-    }
+    const visibleItems = computed(() =>
+      (props.schema ?? []).filter((i) => {
+        const showOk = isFn(i.show) ? !!i.show({ model: innerModel }) : i.show !== false
+        const hiddenOk = isFn(i.hidden) ? !!i.hidden({ model: innerModel }) : i.hidden === true
+        return showOk && !hiddenOk
+      })
+    )
 
-    /** ✅ disabled/readonly 支持函数联动 */
     function isDisabled(item: ProFormItem) {
-      const d = (item as any).disabled
-      return isFn(d) ? !!d({ model: innerModel }) : !!d
+      return isFn(item.disabled) ? !!item.disabled({ model: innerModel }) : !!item.disabled
     }
     function isReadonly(item: ProFormItem) {
-      const r = (item as any).readonly
-      return isFn(r) ? !!r({ model: innerModel }) : !!r
+      return isFn(item.readonly) ? !!item.readonly({ model: innerModel }) : !!item.readonly
     }
 
-    const visibleItems = computed(() => (props.schema ?? []).filter((i) => isVisible(i)))
-
-    function applyDefaults(next: Model) {
-      for (const item of props.schema || []) {
-        if (!item.field) continue
-        if (next[item.field] === undefined && (item as any).defaultValue !== undefined) {
-          next[item.field] = (item as any).defaultValue
-        }
-      }
-      return next
+    function commitUpdate() {
+      // ✅ 不用 JSON 深拷贝，避免吞 Date/File/undefined/BigInt
+      emit('update:modelValue', { ...toRaw(innerModel) })
     }
 
-    /** ✅ 同步：不 deep watch + 不 delete 清空（避免打断输入/光标抖动） */
+    function updateField(field: string, value: any) {
+      setValueByPath(innerModel, field, value)
+      commitUpdate()
+    }
+
+    // ✅ 远程 options（抽离）
+    const { optionsMap: remoteOptionsMap, loadingMap: remoteLoadingMap } = useRemoteOptions({
+      schema: () => props.schema,
+      model: innerModel,
+      getValueByPath,
+      updateField,
+      isInitializing: () => isInitializing,
+    })
+
+    const getFinalOptions = (item: ProFormItem) => {
+      if (remoteOptionsMap[item.field]) return remoteOptionsMap[item.field]
+      if (item.options) return formatOptions(item.options)
+      return formatOptions(item.valueEnum)
+    }
+
+    // ✅ modelValue 回显：不 deep watch + 不 delete 清空（避免打断输入/焦点丢失）
     watch(
       () => props.modelValue,
       (v) => {
-        const next: Model = applyDefaults({ ...(v || {}) } as any)
+        isInitializing = true
+        const next: any = v ? { ...(v as any) } : {}
+
+        // 补默认值（只补 schema 顶层，不做递归爆炸）
+        for (const item of props.schema || []) {
+          if (!item?.field) continue
+          const cur = getValueByPath(next, item.field)
+          if (cur === undefined && (item as any).defaultValue !== undefined) {
+            setValueByPath(next, item.field, (item as any).defaultValue)
+          }
+        }
+
+        // 温和同步：删除 next 中不存在的顶层 key（可选但推荐）
+        for (const k of Object.keys(innerModel)) {
+          if (!(k in next)) delete (innerModel as any)[k]
+        }
         Object.assign(innerModel, next)
+
+        queueMicrotask(() => (isInitializing = false))
       },
       { immediate: true }
     )
 
-    function commitUpdate() {
-      emit('update:modelValue', { ...toRaw(innerModel) })
+    async function validate() {
+      return await formRef.value?.validate()
     }
 
-    /** ✅ 关键：实时同步到 v-model（避免父组件拿不到最新值） */
-    function updateField(field: string, value: any) {
-      innerModel[field] = value
+    function reset() {
+      formRef.value?.resetFields()
+      emit('reset', { ...toRaw(innerModel) })
+    }
+
+    async function submit() {
+      const ok = await formRef.value?.validate().catch(() => false)
+      if (!ok) return
       commitUpdate()
+      emit('submit', { ...toRaw(innerModel) })
     }
 
     function onEnter(item: ProFormItem) {
@@ -136,151 +196,143 @@ export default defineComponent({
       emit('enter', { item, model: { ...toRaw(innerModel) } })
     }
 
-    async function validate() {
-      return await formRef.value?.validate()
-    }
-
-    async function submit() {
-      const ok = await formRef.value?.validate().catch(() => false)
-      if (!ok) return
-      // 已经实时 commit，这里再 commit 也没副作用
-      commitUpdate()
-      emit('submit', { ...toRaw(innerModel) })
-    }
-
-    function reset() {
-      const next: Model = {}
-      for (const item of props.schema || []) {
-        if (!item.field) continue
-        next[item.field] = (item as any).defaultValue !== undefined ? (item as any).defaultValue : undefined
-      }
-      Object.assign(innerModel, next)
-      formRef.value?.clearValidate()
-      commitUpdate()
-      emit('reset', { ...toRaw(innerModel) })
-    }
-
     expose({ validate, submit, reset, formRef })
 
+    // 渲染控件
     const renderControl = (item: ProFormItem) => {
-      const common = {
-        modelValue: innerModel[item.field],
+      const currentValue = getValueByPath(innerModel, item.field)
+
+      const common: any = {
+        modelValue: currentValue,
         'onUpdate:modelValue': (val: any) => updateField(item.field, val),
         ...item.componentProps,
         disabled: isDisabled(item) || (item.componentProps as any)?.disabled,
         readonly: isReadonly(item) || (item.componentProps as any)?.readonly,
       }
 
-      if (!item.valueType || item.valueType === 'text') {
-        return (
-          <ElInput
-            {...common}
-            clearable
-            placeholder={item.placeholder ?? `请输入${item.label ?? ''}`}
-            onKeydown={(e: KeyboardEvent | Event) => {
-              if (e instanceof KeyboardEvent && e.key === 'Enter') {
-                onEnter(item)
-              }
-            }}
-          />
-        )
+      // 1) Slot（item.slot 优先，否则 field 同名）
+      const slotName = item.slot || item.field
+      const namedSlot = (slots as any)[slotName]
+      if (namedSlot) {
+        return namedSlot({
+          model: innerModel,
+          field: item.field,
+          item,
+          value: currentValue,
+          setValue: (val: any) => updateField(item.field, val),
+          disabled: common.disabled,
+          readonly: common.readonly,
+        })
       }
 
-      if (item.valueType === 'textarea') {
-        return (
-          <ElInput
-            {...common}
-            type="textarea"
-            rows={(item as any).rows ?? 3}
-            placeholder={item.placeholder ?? `请输入${item.label ?? ''}`}
-          />
-        )
+      // 2) Render（JSX）
+      if (typeof item.render === 'function') {
+        return item.render({
+          model: innerModel,
+          field: item.field,
+          item,
+          schema: item,
+          value: currentValue,
+          setValue: (val: any) => updateField(item.field, val),
+          disabled: common.disabled,
+          readonly: common.readonly,
+          update: (val: any) => updateField(item.field, val),
+        })
       }
 
-      if (item.valueType === 'select') {
-        return (
-          <ElSelect
-            {...common}
-            clearable
-            placeholder={item.placeholder ?? `请选择${item.label ?? ''}`}
-          >
-            {enumOptions(item).map((opt) => (
-              <ElOption key={String(opt.value)} label={opt.label} value={opt.value} />
-            ))}
-          </ElSelect>
-        )
+      // 3) 自定义 Component
+      if (item.component) {
+        const Comp: any = item.component
+        return <Comp {...common} />
       }
 
-      if (item.valueType === 'radio') {
-        return (
-          <ElRadioGroup {...common}>
-            {enumOptions(item).map((opt) => (
-              <ElRadio key={String(opt.value)} label={opt.value}>
-                {opt.label}
-              </ElRadio>
-            ))}
-          </ElRadioGroup>
-        )
-      }
+      // 4) 内置映射
+      const placeholder =
+        item.placeholder ??
+        `请${
+          ['select', 'cascader', 'date', 'datetime'].includes(item.valueType || '')
+            ? '选择'
+            : '输入'
+        }${item.label ?? ''}`
 
-      if (item.valueType === 'checkbox') {
-        return (
-          <ElCheckboxGroup {...common}>
-            {enumOptions(item).map((opt) => (
-              <ElCheckbox key={String(opt.value)} label={opt.value}>
-                {opt.label}
-              </ElCheckbox>
-            ))}
-          </ElCheckboxGroup>
-        )
+      switch (item.valueType) {
+        case 'textarea':
+          return <ElInput {...common} type="textarea" rows={(item as any).rows ?? 3} placeholder={placeholder} />
+        case 'select':
+          return (
+            <ElSelect
+              {...common}
+              clearable
+              loading={remoteLoadingMap[item.field]}
+              placeholder={placeholder}
+            >
+              {(getFinalOptions(item) || []).map((opt: ProFormOption) => (
+                <ElOption key={String(opt.value)} label={opt.label} value={opt.value} disabled={opt.disabled} />
+              ))}
+            </ElSelect>
+          )
+        case 'radio':
+          return (
+            <ElRadioGroup {...common}>
+              {(getFinalOptions(item) || []).map((opt: ProFormOption) => (
+                <ElRadio key={String(opt.value)} label={opt.value}>
+                  {opt.label}
+                </ElRadio>
+              ))}
+            </ElRadioGroup>
+          )
+        case 'checkbox':
+          return (
+            <ElCheckboxGroup {...common}>
+              {(getFinalOptions(item) || []).map((opt: ProFormOption) => (
+                <ElCheckbox key={String(opt.value)} label={opt.value}>
+                  {opt.label}
+                </ElCheckbox>
+              ))}
+            </ElCheckboxGroup>
+          )
+        case 'switch':
+          return <ElSwitch {...common} />
+        case 'date':
+          return (
+            <ElDatePicker
+              {...common}
+              type="date"
+              valueFormat="YYYY-MM-DD"
+              clearable
+              placeholder={placeholder}
+            />
+          )
+        case 'datetime':
+          return (
+            <ElDatePicker
+              {...common}
+              type="datetime"
+              valueFormat="YYYY-MM-DD HH:mm:ss"
+              clearable
+              placeholder={placeholder}
+            />
+          )
+        case 'cascader':
+          return (
+            <ElCascader
+              {...common}
+              options={getFinalOptions(item) || []}
+              clearable
+              placeholder={placeholder}
+            />
+          )
+        case 'text':
+        default:
+          return (
+            <ElInput
+              {...common}
+              clearable
+              placeholder={placeholder}
+              onKeyup={(e: KeyboardEvent) => e.key === 'Enter' && onEnter(item)}
+            />
+          )
       }
-
-      if (item.valueType === 'switch') {
-        return <ElSwitch {...common} />
-      }
-
-      if (item.valueType === 'date') {
-        return (
-          <ElDatePicker
-            {...common}
-            type="date"
-            valueFormat="YYYY-MM-DD"
-            clearable
-            placeholder={item.placeholder ?? `请选择${item.label ?? ''}`}
-          />
-        )
-      }
-
-      if (item.valueType === 'datetime') {
-        return (
-          <ElDatePicker
-            {...common}
-            type="datetime"
-            valueFormat="YYYY-MM-DD HH:mm:ss"
-            clearable
-            placeholder={item.placeholder ?? `请选择${item.label ?? ''}`}
-          />
-        )
-      }
-
-      if (item.valueType === 'cascader') {
-        return (
-          <ElCascader
-            {...common}
-            options={(item as any).options ?? enumOptions(item)}
-            clearable
-            placeholder={item.placeholder ?? `请选择${item.label ?? ''}`}
-          />
-        )
-      }
-
-      return (
-        <ElInput
-          {...common}
-          clearable
-          placeholder={item.placeholder ?? `请输入${item.label ?? ''}`}
-        />
-      )
     }
 
     return () => (
@@ -293,91 +345,19 @@ export default defineComponent({
           {...(props.formProps || {})}
         >
           <ElRow gutter={props.gutter}>
-            {visibleItems.value.map((item) => {
-              const key = itemKey(item)
-              if (!key) {
-                // 开发期提示：避免随机 key
-                console.warn('[ProForm] schema item should have `field` or `key` or `label`:', item)
-              }
-
-              const slotName = item.slot
-              const fieldSlot = (slots as any)[item.field]
-              const namedSlot = slotName ? (slots as any)[slotName] : null
-
-              const renderContent = () => {
-                // slot（Vue风格）
-                if (namedSlot) {
-                  return namedSlot({
-                    model: innerModel,
-                    field: item.field,
-                    item,
-                    value: innerModel[item.field],
-                    setValue: (val: any) => updateField(item.field, val),
-                    disabled: isDisabled(item),
-                    readonly: isReadonly(item),
-                  })
-                }
-                if (fieldSlot) {
-                  return fieldSlot({
-                    model: innerModel,
-                    field: item.field,
-                    item,
-                    value: innerModel[item.field],
-                    setValue: (val: any) => updateField(item.field, val),
-                    disabled: isDisabled(item),
-                    readonly: isReadonly(item),
-                  })
-                }
-
-                // render（JSX 自由渲染）
-                if (typeof item.render === 'function') {
-                  // ✅ 兼容旧签名 update(val)
-                  const legacyCtx = {
-                    model: innerModel,
-                    field: item.field,
-                    item,
-                    update: (val: any) => updateField(item.field, val),
-                  }
-
-                  // ✅ 新标准 ctx：value / setValue / disabled / readonly
-                  const ctx = {
-                    model: innerModel,
-                    field: item.field,
-                    item,
-                    schema: item,
-                    value: innerModel[item.field],
-                    setValue: (val: any) => updateField(item.field, val),
-                    disabled: isDisabled(item),
-                    readonly: isReadonly(item),
-                    update: (val: any) => updateField(item.field, val), // 仍提供
-                  }
-
-                  // 大多数人会用新 ctx，但旧 ctx 也不炸
-                  return (item.render as any)(ctx) ?? (item.render as any)(legacyCtx)
-                }
-
-                // component（自定义组件）
-                if (item.component) {
-                  const Comp: any = item.component
-                  return (
-                    <Comp
-                      modelValue={innerModel[item.field]}
-                      onUpdate:modelValue={(val: any) => updateField(item.field, val)}
-                      {...(item.componentProps || {})}
-                      disabled={isDisabled(item)}
-                      readonly={isReadonly(item)}
-                    />
-                  )
-                }
-
-                // builtin
-                return renderControl(item)
-              }
+            {visibleItems.value.map((item, idx) => {
+              const key = itemKey(item, idx)
 
               return (
                 <ElCol key={key} span={item.colSpan ?? props.defaultColSpan}>
-                  <ElFormItem label={item.label} prop={item.field} rules={item.rules}>
-                    {renderContent()}
+                  <ElFormItem prop={item.field} rules={item.rules}>
+                    {{
+                      label: () => {
+                        const labelSlotFn = item.labelSlot ? (slots as any)[item.labelSlot] : null
+                        return labelSlotFn ? labelSlotFn({ item, model: innerModel }) : item.label
+                      },
+                      default: () => renderControl(item),
+                    }}
                   </ElFormItem>
                 </ElCol>
               )
@@ -403,3 +383,7 @@ export default defineComponent({
     )
   },
 })
+
+
+
+

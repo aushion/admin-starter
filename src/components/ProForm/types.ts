@@ -1,10 +1,8 @@
-import type { FormItemRule, FormProps } from 'element-plus'
+export type ProFormModel = Record<string, any>
 
-export type ValueEnum =
-  | Record<string | number, string | { label?: string; text?: string; status?: string; children?: any[] }>
-  | Array<{ value: any; label?: string; text?: string; status?: string; children?: any[] }>
+export type ProFormLayout = 'horizontal' | 'inline'
 
-export type ProFormValueType =
+export type ProValueType =
   | 'text'
   | 'textarea'
   | 'select'
@@ -15,37 +13,72 @@ export type ProFormValueType =
   | 'datetime'
   | 'cascader'
 
-export interface ProFormItem {
+export type ProFormOption = {
+  label: string
+  value: any
+  children?: ProFormOption[]
+  disabled?: boolean
+}
+
+export type ProFormItem = {
+  /** 必填：字段名，支持 path：a.b.c */
   field: string
   label?: string
-  valueType?: ProFormValueType
-  valueEnum?: ValueEnum
-  rules?: FormItemRule[] | FormItemRule
+
+  valueType?: ProValueType
   placeholder?: string
   colSpan?: number
-  show?: boolean
-  hidden?: boolean
   defaultValue?: any
-  rows?: number
 
+  show?: boolean | ((ctx: { model: ProFormModel }) => boolean)
+  hidden?: boolean | ((ctx: { model: ProFormModel }) => boolean)
+  disabled?: boolean | ((ctx: { model: ProFormModel }) => boolean)
+  readonly?: boolean | ((ctx: { model: ProFormModel }) => boolean)
+
+  rules?: any
+
+  /** 插槽名：默认 item.slot || item.field */
   slot?: string
-  component?: any
-  componentProps?: Record<string, any>
-  options?: any[]
+  /** label 插槽名 */
+  labelSlot?: string
+
+  /** JSX render */
   render?: (ctx: {
     model: ProFormModel
     field: string
     item: ProFormItem
+    schema: ProFormItem
+    value: any
+    setValue: (val: any) => void
+    disabled?: boolean
+    readonly?: boolean
     update: (val: any) => void
   }) => any
+
+  /** 自定义组件 */
+  component?: any
+  componentProps?: Record<string, any>
+
+  /** 静态 options */
+  options?: any
+  valueEnum?: any
+
+  /** ✅ 远程 options */
+  request?: (ctx: { model: ProFormModel }) => Promise<any>
+  dependencies?: string[]
+  clearOnDependenciesChange?: boolean | ((ctx: { model: ProFormModel }) => boolean)
+
+  /** ✅ 将 request 返回值转换为 ProFormOption[] */
+  transformOptions?: (
+    raw: any,
+    ctx: { model: ProFormModel; item: ProFormItem }
+  ) => ProFormOption[]
 }
 
-export type ProFormModel = Record<string, any>
-
-export interface ProFormProps {
+export type ProFormProps = {
   modelValue: ProFormModel
   schema: ProFormItem[]
-  layout?: 'horizontal' | 'inline'
+  layout?: ProFormLayout
   labelWidth?: number | string
   gutter?: number
   defaultColSpan?: number
@@ -53,5 +86,5 @@ export interface ProFormProps {
   submitText?: string
   resetText?: string
   submitOnEnter?: boolean
-  formProps?: Partial<FormProps>
+  formProps?: Record<string, any>
 }

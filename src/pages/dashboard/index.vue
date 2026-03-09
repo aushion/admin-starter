@@ -1,99 +1,59 @@
 <template>
-  <div style="padding: 16px">
-    <ProTable
-        title="Users"
-        :columns="columns"
-        :request="fetchList"
-        
-        :row-selection="rowSelection"
-        :expand="{ width: 46 }"
-        border
-        stripe
-    >
-      <template #toolbar="{ reload, reset }">
-        <el-button @click="reset">Reset</el-button>
-        <el-button type="primary" @click="reload">Reload</el-button>
-      </template>
-
-      <template #expand="{ row }">
-        <div style="padding: 12px;">
-          <div><b>Expanded Row</b></div>
-          <div>ID: {{ row.id }}</div>
-          <div>Email: {{ row.email }}</div>
-        </div>
-      </template>
-    </ProTable>
-  </div>
+  <ProForm
+    v-model="formModel"
+    :schema="schema"
+    label-width="140"
+    @submit="onSubmit"
+  />
 </template>
 
-<script setup lang="tsx">
-import { ref } from 'vue'
-import ProTable, { type ProColumn, type RequestParams, type RowSelection } from '@/components/ProTable'
+<script setup lang="ts">
+import { reactive } from 'vue'
+import ProForm, { type ProFormItem } from '@/components/ProForm'
 
-type User = {
-  id: number
-  name: string
-  email: string
+// 模拟接口
+async function fetchZones() {
+  // return await http.get('/api/zones')
+  return [{ id: 'z1', name: 'Zone one' }, { id: 'z2', name: 'Zone two' }]
 }
 
-const selectedKeys = ref<Array<number | string>>([])
-
-const rowSelection: RowSelection<User> = {
-  selectedRowKeys: selectedKeys.value,
-  onChange: (keys) => {
-    selectedKeys.value = keys
-    console.log('selected keys:', keys)
-  }
+async function fetchCountsByZone(zoneId: string) {
+  // return await http.get('/api/counts', { params: { zoneId } })
+  if (!zoneId) return []
+  const map: Record<string, number[]> = { z1: [1, 2, 3], z2: [10, 20] }
+  return (map[zoneId] || []).map((n) => ({ value: n, label: String(n) }))
 }
 
-const columns: ProColumn<User>[] = [
-  { title: 'ID', dataIndex: 'id', width: 80, sortable: true },
-  { title: 'Name', dataIndex: 'name', minWidth: 140 },
+const formModel = reactive({
+  zoneId: undefined as string | undefined,
+  activityCount: undefined as number | undefined,
+})
+
+const schema: ProFormItem[] = [
   {
-    title: 'Email',
-    dataIndex: 'email',
-    render: ({ cellValue }) => (
-        <el-link href={`mailto:${cellValue}`} type="primary">
-      {cellValue}
-      </el-link>
-)
-},
-{
-  title: 'Actions',
-      key: 'actions',
-    width: 220,
-    render: ({ row }) => (
-    <>
-        <el-button size="small" onClick={() => handleEdit(row)}>Edit</el-button>
-<el-button size="small" type="danger" onClick={() => handleDelete(row)}>Delete</el-button>
-</>
-)
-}
+    field: 'zoneId',
+    label: 'Activity zone',
+    valueType: 'select',
+    request: async () => fetchZones(),
+    transformOptions: (raw) =>
+      raw.map((x: any) => ({ label: x.name, value: x.id })),
+    rules: [{ required: true, message: '请选择区域', trigger: 'change' }],
+  },
+  {
+    field: 'activityCount',
+    label: 'Activity count',
+    valueType: 'select',
+    // 关键：依赖第一个字段
+    dependencies: ['zoneId'],
+    request: async ({ model }) => fetchCountsByZone(model.zoneId),
+    // 依赖变化时默认会清空当前值（clearOnDependenciesChange 默认 true）
+    clearOnDependenciesChange: true,
+    disabled: ({ model }) => !model.zoneId,
+    rules: [{ required: true, message: '请选择次数', trigger: 'change' }],
+  },
 ]
 
-// mock request
-async function fetchList(params: RequestParams) {
-  console.log('request params:', params)
-  const { currentPage, pageSize } = params
-  const total = 25
-
-  const data: User[] = Array.from({ length: pageSize }).map((_, i) => {
-    const id = (currentPage - 1) * pageSize + i + 1
-    return {
-      id,
-      name: `User ${id}`,
-      email: `user${id}@example.com`
-    }
-  })
-
-  return { data, total }
-}
-
-function handleEdit(row: User) {
-  console.log('edit:', row)
-}
-
-function handleDelete(row: User) {
-  console.log('delete:', row)
+function onSubmit(values: Record<string, any>) {
+  console.log('submit:', values)
 }
 </script>
