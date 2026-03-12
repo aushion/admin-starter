@@ -94,8 +94,8 @@ const ALL_ROWS: DeviceRow[] = Array.from({ length: 1000 }).map((_, i) => {
   const id = i + 1
   const zone: ZoneCode = id % 3 === 0 ? 'west' : id % 2 === 0 ? 'south' : 'north'
   const status: RowStatus = id % 2 ? 'online' : 'offline'
-  const level = (['P1', 'P2', 'P3'] as const)[id % 3]
-  const source = (['manual', 'api', 'import'] as const)[id % 3]
+  const level = (['P1', 'P2', 'P3'] as const)[id % 3] ?? 'P1'
+  const source = (['manual', 'api', 'import'] as const)[id % 3] ?? 'manual'
 
   return {
     id,
