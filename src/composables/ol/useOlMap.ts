@@ -8,7 +8,6 @@ import type { MapOptions } from 'ol/Map'
 import type { ViewOptions } from 'ol/View'
 import type { Options as XYZOptions } from 'ol/source/XYZ'
 import { useMapEngine } from './engine/context'
-import { useOlLayers } from './engine/useOlLayers'
 
 type MaybeRef<T> = T | Ref<T>
 
@@ -22,7 +21,6 @@ export interface UseOlMapOptions {
 
 export function useOlMap(mapEl: MaybeRef<HTMLElement | null | undefined>, options: UseOlMapOptions) {
   const engine = useMapEngine()
-  const layers = useOlLayers()
   const baseLayer = shallowRef<TileLayer<XYZ | OSM> | null>(null)
   let resizeObserver: ResizeObserver | null = null
 
@@ -54,6 +52,7 @@ export function useOlMap(mapEl: MaybeRef<HTMLElement | null | undefined>, option
     const layer = new TileLayer({
       source: primarySource ?? createFallbackSource(),
     })
+    layer.setZIndex(0)
     baseLayer.value = layer
 
     if (!primarySource) {
@@ -78,13 +77,12 @@ export function useOlMap(mapEl: MaybeRef<HTMLElement | null | undefined>, option
 
     const map = new Map({
       target: el,
-      layers: [],
+      layers: [layer],
       view,
       ...(options.mapOptions ?? {}),
     })
 
     engine.map.value = map
-    layers.add('base:xyz', layer, { title: '底图', group: 'base', zIndex: 0, visible: true, replace: true })
 
     await nextTick()
     requestAnimationFrame(updateMapSize)
@@ -103,15 +101,14 @@ export function useOlMap(mapEl: MaybeRef<HTMLElement | null | undefined>, option
     resizeObserver = null
     window.removeEventListener('resize', updateMapSize)
 
-    if (engine.map.value) {
-      engine.map.value.setTarget(undefined)
+    const map = engine.map.value
+    if (map) {
+      if (baseLayer.value) map.removeLayer(baseLayer.value)
+      map.setTarget(undefined)
       engine.map.value = null
     }
 
-    if (baseLayer.value) {
-      layers.remove('base:xyz')
-      baseLayer.value = null
-    }
+    baseLayer.value = null
   })
 
   return { map: engine.map, baseLayer, updateMapSize }

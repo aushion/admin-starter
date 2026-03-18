@@ -3,10 +3,9 @@ import Feature from 'ol/Feature'
 import Point from 'ol/geom/Point'
 import HeatmapLayer from 'ol/layer/Heatmap'
 import VectorLayer from 'ol/layer/Vector'
+import VectorSource from 'ol/source/Vector'
 import { fromLonLat } from 'ol/proj'
 import { useMapEngine } from './engine/context'
-import { useOlLayers } from './engine/useOlLayers'
-import { useOlSources } from './engine/useOlSources'
 import { onMapReady } from './engine/utils'
 import type { Style } from 'ol/style'
 
@@ -23,10 +22,6 @@ export interface HeatPoint {
 export interface UseOlHeatPointsOptions {
   points: MaybeRef<HeatPoint[]>
 
-  sourceId?: string
-  heatLayerId?: string
-  pointLayerId?: string
-
   showHeat?: boolean
   showPoint?: boolean
 
@@ -41,9 +36,6 @@ export interface UseOlHeatPointsOptions {
 
   /** 把后端 weight 转成 0~1 */
   weightFn?: (p: HeatPoint) => number
-
-  /** 同 id 存在时是否替换（默认 true，保证热力积木重进页面不会叠图层） */
-  replace?: boolean
 }
 
 const clamp01 = (v: number) => Math.max(0, Math.min(1, v))
@@ -54,12 +46,6 @@ const toInt = (v: unknown, fallback: number) => {
 
 export function useOlHeatPoints(options: UseOlHeatPointsOptions) {
   const engine = useMapEngine()
-  const layers = useOlLayers()
-  const sources = useOlSources()
-
-  const sourceId = options.sourceId ?? 'src:points'
-  const heatLayerId = options.heatLayerId ?? 'layer:heat'
-  const pointLayerId = options.pointLayerId ?? 'layer:points'
 
   const showHeat = ref(options.showHeat ?? true)
   const showPoint = ref(options.showPoint ?? false)
@@ -68,7 +54,7 @@ export function useOlHeatPoints(options: UseOlHeatPointsOptions) {
 
   const weightFn = options.weightFn ?? ((p) => clamp01(typeof p.weight === 'number' ? p.weight : 1))
 
-  const src = sources.ensure(sourceId)
+  const src = new VectorSource()
 
   const heatLayer = shallowRef<HeatmapLayer | null>(null)
   const pointLayer = shallowRef<VectorLayer<any> | null>(null)
@@ -87,32 +73,23 @@ export function useOlHeatPoints(options: UseOlHeatPointsOptions) {
     src.addFeatures(feats)
   }
 
-  const dispose = onMapReady(engine.map, () => {
+  const dispose = onMapReady(engine.map, (map) => {
     const h = new HeatmapLayer({
       source: src,
       blur: blur.value,
       radius: radius.value,
       gradient: options.gradient,
     })
+    h.setZIndex(options.zIndexHeat ?? 20)
+    h.setVisible(showHeat.value)
     heatLayer.value = h
-    layers.add(heatLayerId, h, {
-      title: '热力图',
-      group: 'data',
-      zIndex: options.zIndexHeat ?? 20,
-      visible: showHeat.value,
-      replace: options.replace ?? true,
-    })
+    map.addLayer(h)
 
-    // Always create point layer; visibility is controlled reactively.
     const pl = new VectorLayer({ source: src, style: options.pointStyle })
+    pl.setZIndex(options.zIndexPoint ?? 30)
+    pl.setVisible(showPoint.value)
     pointLayer.value = pl
-    layers.add(pointLayerId, pl, {
-      title: '点位',
-      group: 'data',
-      zIndex: options.zIndexPoint ?? 30,
-      visible: showPoint.value,
-      replace: options.replace ?? true,
-    })
+    map.addLayer(pl)
 
     setPoints(unref(options.points) ?? [])
 
@@ -142,14 +119,14 @@ export function useOlHeatPoints(options: UseOlHeatPointsOptions) {
       { immediate: true },
     )
 
-    const stopShowHeat = watch(showHeat, (v) => layers.setVisible(heatLayerId, v), { immediate: true })
-    const stopShowPoint = watch(showPoint, (v) => layers.setVisible(pointLayerId, v), { immediate: true })
+    const stopShowHeat = watch(showHeat, (v) => heatLayer.value?.setVisible(v), { immediate: true })
+    const stopShowPoint = watch(showPoint, (v) => pointLayer.value?.setVisible(v), { immediate: true })
 
     return () => {
       stopPoints(); stopBlur(); stopRadius(); stopShowHeat(); stopShowPoint()
 
-      layers.remove(heatLayerId)
-      layers.remove(pointLayerId)
+      if (heatLayer.value) map.removeLayer(heatLayer.value)
+      if (pointLayer.value) map.removeLayer(pointLayer.value)
 
       heatLayer.value = null
       pointLayer.value = null

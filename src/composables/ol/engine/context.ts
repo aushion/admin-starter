@@ -1,27 +1,8 @@
-import { getCurrentInstance, inject, provide, shallowReactive, shallowRef, type InjectionKey, type ShallowRef } from 'vue'
+import { getCurrentInstance, inject, provide, shallowRef, type InjectionKey, type ShallowRef } from 'vue'
 import type OlMap from 'ol/Map'
-import type BaseLayer from 'ol/layer/Base'
-import type VectorSource from 'ol/source/Vector'
-import type Overlay from 'ol/Overlay'
-import type Interaction from 'ol/interaction/Interaction'
-
-export interface LayerMeta {
-  id: string
-  title?: string
-  group?: string          // 用于图层树分组
-  zIndex?: number
-  visible?: boolean
-}
 
 export interface MapEngine {
   map: ShallowRef<OlMap | null>
-
-  // registries
-  layers: Map<string, BaseLayer>
-  layerMeta: Map<string, LayerMeta>
-  sources: Map<string, VectorSource>
-  overlays: Map<string, Overlay>
-  interactions: Map<string, Interaction>
 }
 
 export const MAP_ENGINE_KEY: InjectionKey<MapEngine> = Symbol('MAP_ENGINE')
@@ -29,12 +10,6 @@ export const MAP_ENGINE_KEY: InjectionKey<MapEngine> = Symbol('MAP_ENGINE')
 export function createMapEngine(): MapEngine {
   return {
     map: shallowRef<OlMap | null>(null),
-
-    layers: shallowReactive(new Map()),
-    layerMeta: shallowReactive(new Map()),
-    sources: shallowReactive(new Map()),
-    overlays: shallowReactive(new Map()),
-    interactions: shallowReactive(new Map()),
   }
 }
 

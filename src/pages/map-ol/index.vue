@@ -3,24 +3,23 @@ import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
 import 'ol/ol.css'
 import { unByKey } from 'ol/Observable'
 import type { EventsKey } from 'ol/events'
-import Draw, { createBox } from 'ol/interaction/Draw'
 import Feature from 'ol/Feature'
-import Geometry from 'ol/geom/Geometry'
 import { fromExtent as polygonFromExtent } from 'ol/geom/Polygon'
 import VectorLayer from 'ol/layer/Vector'
 import VectorSource from 'ol/source/Vector'
+import Overlay from 'ol/Overlay'
 import { fromLonLat } from 'ol/proj'
 import { Fill, RegularShape, Stroke, Style } from 'ol/style'
 import { createMapEngine, provideMapEngine } from '@/composables/ol/engine/context'
 import { useOlMap } from '@/composables/ol/useOlMap'
 import { useOlHeatPoints, type HeatPoint } from '@/composables/ol/useOlHeatPoints'
+import { useOlDraw } from '@/composables/ol/useOlDraw'
+import { useOlViewport } from '@/composables/ol/useOlViewport'
 
 const engine = createMapEngine()
 provideMapEngine(engine)
 
 const mapEl = ref<HTMLElement | null>(null)
-
-type DrawMode = 'none' | 'rect' | 'polygon'
 
 const POINT_COUNT = 10000
 const HEAT_HIDE_ZOOM = 13.5
@@ -35,6 +34,11 @@ const { map } = useOlMap(mapEl, {
   },
 })
 
+const draw = useOlDraw()
+const viewport = useOlViewport()
+
+// ─── 数据类型 ──────────────────────────────────
+
 type ClusterSeed = {
   lon: number
   lat: number
@@ -48,6 +52,8 @@ type HeatPointEx = HeatPoint & {
   y3857: number
 }
 
+// ─── 聚簇种子 ──────────────────────────────────
+
 const BEIJING_CLUSTERS: ClusterSeed[] = [
   { lon: 116.4074, lat: 39.9042, ratio: 0.18, sigmaKm: 4.8, peak: 1.0 },
   { lon: 116.4551, lat: 39.9220, ratio: 0.20, sigmaKm: 6.5, peak: 0.95 },
@@ -58,6 +64,8 @@ const BEIJING_CLUSTERS: ClusterSeed[] = [
   { lon: 116.1076, lat: 40.2208, ratio: 0.07, sigmaKm: 8.0, peak: 0.62 },
   { lon: 116.8434, lat: 39.9284, ratio: 0.07, sigmaKm: 8.5, peak: 0.60 },
 ]
+
+// ─── 随机数据生成 ──────────────────────────────
 
 function gaussianRandom(): number {
   let u = 0
@@ -103,7 +111,7 @@ function generateBeijingRandomPoints(count: number): HeatPointEx[] {
     const base = c.peak * decay + localNoise
     const normalized = Math.max(0.03, Math.min(1, base))
 
-    const [x3857, y3857] = fromLonLat([lon, lat])
+    const [x3857, y3857] = fromLonLat([lon, lat]) as [number, number]
 
     data[i] = {
       id: i + 1,
@@ -126,29 +134,28 @@ function generateBeijingRandomPoints(count: number): HeatPointEx[] {
   return data
 }
 
+// ─── 业务状态 ──────────────────────────────────
+
 const basePoints = ref<HeatPointEx[]>([])
 const targetPoints = ref<HeatPointEx[]>([])
-
-const selectionGeometry = shallowRef<Geometry | null>(null)
-const drawMode = ref<DrawMode>('none')
 
 const gridCellSize = ref(0)
 const gridCellCount = ref(0)
 const gridMaxCount = ref(1)
 
-const drawSource = new VectorSource()
 const gridSource = new VectorSource()
-
-const drawLayer = shallowRef<VectorLayer<VectorSource> | null>(null)
 const gridLayer = shallowRef<VectorLayer<VectorSource> | null>(null)
 
-let drawInteraction: Draw | null = null
-let moveEndKey: EventsKey | null = null
+let pointerMoveKey: EventsKey | null = null
+const popupEl = ref<HTMLElement | null>(null)
+let popupOverlay: Overlay | null = null
+const hoveredPoint = ref<HeatPointEx | null>(null)
 
-const currentZoom = ref(0)
-const hasSelection = computed(() => !!selectionGeometry.value)
+const hasSelection = computed(() => !!draw.geometry.value)
 const selectedPointCount = computed(() => targetPoints.value.length)
-const gridHeatVisible = computed(() => hasSelection.value && currentZoom.value < HEAT_HIDE_ZOOM)
+const gridHeatVisible = computed(() => hasSelection.value && viewport.zoom.value < HEAT_HIDE_ZOOM)
+
+// ─── 热力图 ──────────────────────────────────
 
 const pointStyle = new Style({
   image: new RegularShape({
@@ -191,11 +198,7 @@ function applyBalancedPreset() {
   blurModel.value = 22
 }
 
-function teardownDrawInteraction() {
-  if (!drawInteraction || !map.value) return
-  map.value.removeInteraction(drawInteraction)
-  drawInteraction = null
-}
+// ─── 网格热力 ──────────────────────────────────
 
 function gridFillColorByRatio(r: number) {
   const ratio = Math.max(0, Math.min(1, r))
@@ -225,14 +228,8 @@ function getGridStyleByCount(count: number) {
   return style
 }
 
-function calcGridCellSizeMeters() {
-  const resolution = map.value?.getView().getResolution() ?? 1
-  return Math.max(GRID_MIN_SIZE_M, Math.min(GRID_MAX_SIZE_M, resolution * GRID_BASE_PIXEL))
-}
-
 function syncLayerByZoom() {
-  currentZoom.value = map.value?.getView().getZoom() ?? 0
-  const hideHeat = currentZoom.value >= HEAT_HIDE_ZOOM
+  const hideHeat = viewport.zoom.value >= HEAT_HIDE_ZOOM
   heat.showHeat.value = !hideHeat
   heat.showPoint.value = hideHeat
 
@@ -248,13 +245,13 @@ function rebuildGridHeat() {
   gridMaxCount.value = 1
   gridStyleCache.clear()
 
-  const geom = selectionGeometry.value
+  const geom = draw.geometry.value
   if (!geom) return
-  if (currentZoom.value >= HEAT_HIDE_ZOOM) return
+  if (viewport.zoom.value >= HEAT_HIDE_ZOOM) return
   if (targetPoints.value.length === 0) return
 
-  const [minX, minY, maxX, maxY] = geom.getExtent()
-  const cellSize = calcGridCellSizeMeters()
+  const [minX, minY, maxX, maxY] = geom.getExtent() as [number, number, number, number]
+  const cellSize = Math.max(GRID_MIN_SIZE_M, Math.min(GRID_MAX_SIZE_M, viewport.resolution.value * GRID_BASE_PIXEL))
   gridCellSize.value = Math.round(cellSize)
 
   const cols = Math.max(1, Math.ceil((maxX - minX) / cellSize))
@@ -307,15 +304,17 @@ function rebuildGridHeat() {
   if (features.length) gridSource.addFeatures(features)
 }
 
+// ─── 框选联动 ──────────────────────────────────
+
 function applySelection() {
-  if (!selectionGeometry.value) {
+  if (!draw.geometry.value) {
     targetPoints.value = basePoints.value.slice()
     rebuildGridHeat()
     syncLayerByZoom()
     return
   }
 
-  const geom = selectionGeometry.value
+  const geom = draw.geometry.value
   const filtered = basePoints.value.filter((p) => geom.intersectsCoordinate([p.x3857, p.y3857]))
   targetPoints.value = filtered
 
@@ -324,10 +323,7 @@ function applySelection() {
 }
 
 function clearSelection() {
-  teardownDrawInteraction()
-  drawMode.value = 'none'
-  selectionGeometry.value = null
-  drawSource.clear(true)
+  draw.clear()
   gridSource.clear(true)
   gridCellCount.value = 0
   gridCellSize.value = 0
@@ -336,40 +332,17 @@ function clearSelection() {
   syncLayerByZoom()
 }
 
-function beginDraw(mode: Exclude<DrawMode, 'none'>) {
-  const olMap = map.value
-  if (!olMap) return
-
-  teardownDrawInteraction()
-  drawSource.clear(true)
-  selectionGeometry.value = null
+function beginDraw(mode: 'rect' | 'polygon') {
   gridSource.clear(true)
   gridCellCount.value = 0
   gridCellSize.value = 0
 
-  drawMode.value = mode
-
-  const interaction = new Draw({
-    source: drawSource,
-    type: mode === 'rect' ? 'Circle' : 'Polygon',
-    geometryFunction: mode === 'rect' ? createBox() : undefined,
-  })
-
-  interaction.on('drawend', (evt: any) => {
-    const geom = evt.feature?.getGeometry?.()
-    selectionGeometry.value = geom ? (geom.clone() as Geometry) : null
-    drawMode.value = 'none'
-    teardownDrawInteraction()
-    applySelection()
-  })
-
-  drawInteraction = interaction
-  olMap.addInteraction(interaction)
+  draw.start(mode)
 }
 
 function refresh() {
   basePoints.value = generateBeijingRandomPoints(POINT_COUNT)
-  if (selectionGeometry.value) {
+  if (draw.geometry.value) {
     applySelection()
     return
   }
@@ -377,15 +350,25 @@ function refresh() {
   syncLayerByZoom()
 }
 
+// ─── draw.geometry 变化时自动触发筛选 ──────────
+
+watch(draw.geometry, (geom) => {
+  if (geom) applySelection()
+})
+
+// ─── viewport 变化时联动图层和网格 ──────────────
+
+watch(viewport.zoom, () => {
+  if (draw.geometry.value) rebuildGridHeat()
+  syncLayerByZoom()
+})
+
+// ─── 地图初始化后：网格图层 + Popup ──────────────
+
 watch(
   map,
   (olMap) => {
-    if (!olMap || drawLayer.value || gridLayer.value) return
-
-    const selectionStyle = new Style({
-      fill: new Fill({ color: 'rgba(59, 130, 246, 0.10)' }),
-      stroke: new Stroke({ color: 'rgba(59, 130, 246, 0.9)', width: 2, lineDash: [8, 6] }),
-    })
+    if (!olMap || gridLayer.value) return
 
     const gridLayerInst = new VectorLayer({
       source: gridSource,
@@ -397,25 +380,46 @@ watch(
       },
     })
 
-    const drawLayerInst = new VectorLayer({
-      source: drawSource,
-      zIndex: 36,
-      style: selectionStyle,
-    })
-
     gridLayer.value = gridLayerInst
-    drawLayer.value = drawLayerInst
-
     olMap.addLayer(gridLayerInst)
-    olMap.addLayer(drawLayerInst)
 
-    moveEndKey = olMap.on('moveend', () => {
-      currentZoom.value = olMap.getView().getZoom() ?? 0
-      if (selectionGeometry.value) rebuildGridHeat()
-      syncLayerByZoom()
+    popupOverlay = new Overlay({
+      element: popupEl.value!,
+      positioning: 'bottom-center',
+      offset: [0, -12],
+      stopEvent: false,
+    })
+    olMap.addOverlay(popupOverlay)
+
+    pointerMoveKey = olMap.on('pointermove', (evt) => {
+      if (evt.dragging) {
+        hoveredPoint.value = null
+        popupOverlay?.setPosition(undefined)
+        return
+      }
+
+      const feature = olMap.forEachFeatureAtPixel(evt.pixel, (f) => f, {
+        layerFilter: (l) => l === heat.pointLayer.value,
+        hitTolerance: 4,
+      })
+
+      if (feature) {
+        const data = (feature as Feature).get('data') as HeatPointEx | undefined
+        if (data) {
+          hoveredPoint.value = data
+          popupOverlay?.setPosition(evt.coordinate)
+          const el = olMap.getTargetElement()
+          if (el) el.style.cursor = 'pointer'
+          return
+        }
+      }
+
+      hoveredPoint.value = null
+      popupOverlay?.setPosition(undefined)
+      const el = olMap.getTargetElement()
+      if (el) el.style.cursor = ''
     })
 
-    currentZoom.value = olMap.getView().getZoom() ?? 0
     refresh()
     syncLayerByZoom()
   },
@@ -423,23 +427,19 @@ watch(
 )
 
 onUnmounted(() => {
-  teardownDrawInteraction()
-
-  if (moveEndKey) {
-    unByKey(moveEndKey)
-    moveEndKey = null
+  if (pointerMoveKey) {
+    unByKey(pointerMoveKey)
+    pointerMoveKey = null
   }
 
   const olMap = map.value
   if (olMap) {
+    if (popupOverlay) olMap.removeOverlay(popupOverlay)
     if (gridLayer.value) olMap.removeLayer(gridLayer.value)
-    if (drawLayer.value) olMap.removeLayer(drawLayer.value)
   }
 
+  popupOverlay = null
   gridLayer.value = null
-  drawLayer.value = null
-
-  drawSource.clear(true)
   gridSource.clear(true)
 })
 </script>
@@ -447,6 +447,16 @@ onUnmounted(() => {
 <template>
   <div class="relative h-screen w-full overflow-hidden">
     <div ref="mapEl" class="h-full w-full"></div>
+
+    <div ref="popupEl" class="ol-popup" :class="{ 'ol-popup--visible': hoveredPoint }">
+      <template v-if="hoveredPoint">
+        <div class="ol-popup__title">ID: {{ hoveredPoint.id }}</div>
+        <div class="ol-popup__row"><span class="ol-popup__label">经度</span><span>{{ hoveredPoint.lon.toFixed(6) }}</span></div>
+        <div class="ol-popup__row"><span class="ol-popup__label">纬度</span><span>{{ hoveredPoint.lat.toFixed(6) }}</span></div>
+        <div class="ol-popup__row"><span class="ol-popup__label">权重</span><span>{{ hoveredPoint.weight.toFixed(4) }}</span></div>
+        <div class="ol-popup__row"><span class="ol-popup__label">聚簇峰值</span><span>{{ hoveredPoint.clusterPeak }}</span></div>
+      </template>
+    </div>
 
     <div class="absolute left-4 top-4 z-20 w-94 max-w-[calc(100vw-2rem)]">
       <ElCard class="rounded-4 border-0 bg-white/88 shadow-2xl shadow-slate-900/12 backdrop-blur-md">
@@ -466,9 +476,9 @@ onUnmounted(() => {
         </div>
 
         <div class="mt-2 rounded-3 bg-slate-50 px-3 py-2 text-xs text-slate-600 leading-5">
-          当前绘制模式：<span class="font-semibold">{{ drawMode === 'none' ? '无' : drawMode === 'rect' ? '矩形' : '多边形' }}</span>
+          当前绘制模式：<span class="font-semibold">{{ draw.mode.value === 'none' ? '无' : draw.mode.value === 'rect' ? '矩形' : '多边形' }}</span>
           ，选中点位 <span class="font-semibold">{{ selectedPointCount }}</span> 个，网格 <span class="font-semibold">{{ gridCellCount }}</span> 个。
-          网格尺寸约 <span class="font-semibold">{{ gridCellSize || '-' }}</span> 米，Zoom <span class="font-semibold">{{ currentZoom.toFixed(2) }}</span>。
+          网格尺寸约 <span class="font-semibold">{{ gridCellSize || '-' }}</span> 米，Zoom <span class="font-semibold">{{ viewport.zoom.value.toFixed(2) }}</span>。
         </div>
 
         <ElDivider class="my-3" />
@@ -499,3 +509,45 @@ onUnmounted(() => {
     </div>
   </div>
 </template>
+
+<style scoped>
+.ol-popup {
+  position: absolute;
+  pointer-events: none;
+  opacity: 0;
+  transition: opacity 0.15s;
+  background: rgba(255, 255, 255, 0.95);
+  backdrop-filter: blur(8px);
+  border-radius: 8px;
+  padding: 10px 14px;
+  font-size: 12px;
+  line-height: 1.6;
+  color: #334155;
+  box-shadow: 0 4px 16px rgba(15, 23, 42, 0.14);
+  white-space: nowrap;
+  min-width: 160px;
+}
+
+.ol-popup--visible {
+  opacity: 1;
+}
+
+.ol-popup__title {
+  font-weight: 600;
+  font-size: 13px;
+  color: #1e293b;
+  margin-bottom: 4px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid #e2e8f0;
+}
+
+.ol-popup__row {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+}
+
+.ol-popup__label {
+  color: #94a3b8;
+}
+</style>
