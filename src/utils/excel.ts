@@ -13,10 +13,7 @@ export function exportToExcel<T extends Record<string, any>>(
   const sheetName = options.sheetName ?? 'Sheet1'
 
   const data = options.header
-    ? [
-        options.header.map(h => h.title),
-        ...rows.map(r => options.header!.map(h => r[h.key])),
-      ]
+    ? [options.header.map((h) => h.title), ...rows.map((r) => options.header!.map((h) => r[h.key]))]
     : rows
 
   const ws = XLSX.utils.aoa_to_sheet(data as any)

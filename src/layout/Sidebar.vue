@@ -1,26 +1,24 @@
 <template>
   <aside
-      class="h-full border-r border-gray-200 dark:border-gray-700 transition-all duration-200 overflow-hidden"
-      :class="collapsed ? 'w-16' : 'w-56'"
+    class="h-full border-r border-gray-200 dark:border-gray-700 transition-all duration-200 overflow-hidden"
+    :class="collapsed ? 'w-16' : 'w-56'"
   >
     <!-- Logo / 标题 -->
-    <div class="h-12 flex items-center justify-center border-b border-gray-200 dark:border-gray-700">
+    <div
+      class="h-12 flex items-center justify-center border-b border-gray-200 dark:border-gray-700"
+    >
       <span class="font-600 text-sm" v-if="!collapsed">Admin</span>
       <span v-else>☰</span>
     </div>
 
     <el-menu
-        class="border-0!"
-        :default-active="activePath"
-        :collapse="collapsed"
-        :collapse-transition="false"
-        router
+      class="border-0!"
+      :default-active="activePath"
+      :collapse="collapsed"
+      :collapse-transition="false"
+      router
     >
-      <SidebarItem
-          v-for="item in menus"
-          :key="item.key"
-          :item="item"
-      />
+      <SidebarItem v-for="item in menus" :key="item.key" :item="item" />
     </el-menu>
   </aside>
 </template>
@@ -38,7 +36,7 @@ type MenuItem = {
   key: string
   title: string
   icon?: string
-  path?: string              // el-menu-item 的 index（用于 router 跳转）
+  path?: string // el-menu-item 的 index（用于 router 跳转）
   children?: MenuItem[]
 }
 
@@ -60,7 +58,7 @@ function getTitle(r: RouteRecordRaw) {
 
 function getIcon(r: RouteRecordRaw) {
   const icon = (r.meta as any)?.icon
-  return (typeof icon === 'string' && icon.trim()) ? icon : undefined
+  return typeof icon === 'string' && icon.trim() ? icon : undefined
 }
 
 /**
@@ -76,9 +74,7 @@ function buildMenuTree(records: RouteRecordRaw[], base = ''): MenuItem[] {
 
     // 计算当前节点的绝对路径
     const rawPath = String(r.path || '')
-    const fullPath = rawPath.startsWith('/')
-        ? rawPath
-        : `${base}/${rawPath}`.replace(/\/+/g, '/')
+    const fullPath = rawPath.startsWith('/') ? rawPath : `${base}/${rawPath}`.replace(/\/+/g, '/')
 
     // 递归 children
     const children = Array.isArray(r.children) ? buildMenuTree(r.children, fullPath) : []
@@ -86,7 +82,7 @@ function buildMenuTree(records: RouteRecordRaw[], base = ''): MenuItem[] {
     // 目录节点：只有 children，没有 component 的也可当目录
     const title = getTitle(r)
     const icon = getIcon(r)
-    
+
     // 如果这个路由本身没有 title，但子节点有（极少），也可以选择隐藏父级
     // 这里按“只要有 children 就展示”处理
     if (children.length > 0) {
@@ -138,8 +134,8 @@ function filterByPermission(records: RouteRecordRaw[]): RouteRecordRaw[] {
  * 从 routes.ts 里提取 layout 下菜单
  */
 const menus = computed<MenuItem[]>(() => {
-  const root = routes.find(r => r.path === '/')
-  const children = filterByPermission((root?.children || []).filter(r => !isHidden(r)))
+  const root = routes.find((r) => r.path === '/')
+  const children = filterByPermission((root?.children || []).filter((r) => !isHidden(r)))
   return buildMenuTree(children, '')
 })
 

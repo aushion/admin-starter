@@ -17,7 +17,10 @@
           </el-button>
         </div>
       </header>
-      <div class="table-box__body" :class="{ 'is-collapsed': basicDataSource.length === 0 || basicCollapsed }">
+      <div
+        class="table-box__body"
+        :class="{ 'is-collapsed': basicDataSource.length === 0 || basicCollapsed }"
+      >
         <ResultTable
           :title="basicTitle"
           :columns="basicColumns"
@@ -48,7 +51,10 @@
           </el-button>
         </div>
       </header>
-      <div class="table-box__body" :class="{ 'is-collapsed': advancedDataSource.length === 0 || advancedCollapsed }">
+      <div
+        class="table-box__body"
+        :class="{ 'is-collapsed': advancedDataSource.length === 0 || advancedCollapsed }"
+      >
         <ResultTable
           :title="advancedTitle"
           :columns="advancedColumns"
@@ -92,10 +98,13 @@ defineProps<{
 const emit = defineEmits<{
   (e: 'toggle-collapse', payload: { tab: QueryTabKey }): void
   (e: 'focus-map', payload: { tab: QueryTabKey; row: DeviceRow }): void
-  (e: 'selection-change', payload: {
-    tab: QueryTabKey
-    payload: { keys: Array<string | number>; rows: DeviceRow[] }
-  }): void
+  (
+    e: 'selection-change',
+    payload: {
+      tab: QueryTabKey
+      payload: { keys: Array<string | number>; rows: DeviceRow[] }
+    },
+  ): void
 }>()
 </script>
 
@@ -138,7 +147,9 @@ const emit = defineEmits<{
 .table-box__body {
   max-height: 1200px;
   opacity: 1;
-  transition: max-height 0.24s ease, opacity 0.16s ease;
+  transition:
+    max-height 0.24s ease,
+    opacity 0.16s ease;
 }
 
 .table-box__body.is-collapsed {

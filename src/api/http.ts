@@ -126,11 +126,15 @@ export function createHttpClient() {
       // 统一网络错误提示
       const status = err.response?.status
       const msg =
-        status === 401 ? '未授权，请登录'
-        : status === 403 ? '没有权限'
-        : status === 404 ? '接口不存在'
-        : status === 500 ? '服务器错误'
-        : err.message || '网络异常'
+        status === 401
+          ? '未授权，请登录'
+          : status === 403
+            ? '没有权限'
+            : status === 404
+              ? '接口不存在'
+              : status === 500
+                ? '服务器错误'
+                : err.message || '网络异常'
 
       showError(msg, config.silent)
       return Promise.reject(err)

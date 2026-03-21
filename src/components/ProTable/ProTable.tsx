@@ -1,13 +1,5 @@
 import './style.css'
-import {
-  defineComponent,
-  computed,
-  reactive,
-  ref,
-  watchEffect,
-  useSlots,
-  type PropType,
-} from 'vue'
+import { defineComponent, computed, reactive, ref, watchEffect, useSlots, type PropType } from 'vue'
 import { ElTable, ElTableColumn, ElPagination, ElTag } from 'element-plus'
 import type { TableInstance } from 'element-plus'
 import type {
@@ -77,13 +69,16 @@ export default defineComponent({
     dataSource: { type: Array as PropType<any[]>, default: () => [] },
     loading: { type: Boolean, default: false },
 
-    pagination: { type: [Boolean, Object] as PropType<false | Partial<ProPagination>>, default: () => ({
-      currentPage: 1,
-      pageSize: 10,
-      total: 0,
-      pageSizes: [10, 20, 50, 100],
-      layout: 'total, sizes, prev, pager, next, jumper',
-    }) },
+    pagination: {
+      type: [Boolean, Object] as PropType<false | Partial<ProPagination>>,
+      default: () => ({
+        currentPage: 1,
+        pageSize: 10,
+        total: 0,
+        pageSizes: [10, 20, 50, 100],
+        layout: 'total, sizes, prev, pager, next, jumper',
+      }),
+    },
 
     request: { type: Function as unknown as PropType<RequestFn<any> | null>, default: null },
     requestExtra: { type: Object as PropType<Record<string, any>>, default: () => ({}) },
@@ -136,10 +131,14 @@ export default defineComponent({
       return merged
     })
 
-    const visibleColumns = computed(() => (props.columns ?? []).filter((c) => c.hideInTable !== true))
+    const visibleColumns = computed(() =>
+      (props.columns ?? []).filter((c) => c.hideInTable !== true),
+    )
     const dataComputed = computed(() => (props.request ? state.innerData : props.dataSource))
     const loadingComputed = computed(() => (props.request ? state.innerLoading : props.loading))
-    const hasSelectionColumn = computed(() => visibleColumns.value.some((c) => c.type === 'selection'))
+    const hasSelectionColumn = computed(() =>
+      visibleColumns.value.some((c) => c.type === 'selection'),
+    )
     const hasExpandColumn = computed(() => visibleColumns.value.some((c) => c.type === 'expand'))
 
     function getRowKeyValue(row: any): string | number {
@@ -189,8 +188,10 @@ export default defineComponent({
 
       // 初次同步外部 pagination（如果传了 object）
       if (typeof props.pagination === 'object') {
-        if (props.pagination.currentPage != null) state.innerPagination.currentPage = props.pagination.currentPage
-        if (props.pagination.pageSize != null) state.innerPagination.pageSize = props.pagination.pageSize
+        if (props.pagination.currentPage != null)
+          state.innerPagination.currentPage = props.pagination.currentPage
+        if (props.pagination.pageSize != null)
+          state.innerPagination.pageSize = props.pagination.pageSize
       }
 
       if (props.manual) return
@@ -249,7 +250,16 @@ export default defineComponent({
       return [...state.innerSelectedKeys]
     }
 
-    expose({ reload, reset, setPage, setPageSize, clearSelection, getSelectedKeys, tableRef, state })
+    expose({
+      reload,
+      reset,
+      setPage,
+      setPageSize,
+      clearSelection,
+      getSelectedKeys,
+      tableRef,
+      state,
+    })
 
     /* ---------- handlers ---------- */
 
@@ -348,7 +358,11 @@ export default defineComponent({
         }
 
         return (
-          <ElTableColumn type="expand" width={col.width ?? props.expand?.width ?? 46} fixed={(col.fixed ?? props.expand?.fixed) as any}>
+          <ElTableColumn
+            type="expand"
+            width={col.width ?? props.expand?.width ?? 46}
+            fixed={(col.fixed ?? props.expand?.fixed) as any}
+          >
             {{
               default: (scope: any) => renderExpand(scope),
             }}
@@ -361,7 +375,8 @@ export default defineComponent({
           <ElTableColumn {...columnProps}>
             {{
               header: (s: any) => <>{Header(s)}</>,
-              default: () => col.children!.map((child) => <ProCol key={colKey(child)} col={child} />),
+              default: () =>
+                col.children!.map((child) => <ProCol key={colKey(child)} col={child} />),
             }}
           </ElTableColumn>
         )
@@ -449,7 +464,11 @@ export default defineComponent({
 
           {/* expand */}
           {props.expand && !hasExpandColumn.value && (
-            <ElTableColumn type="expand" width={props.expand.width ?? 46} fixed={props.expand.fixed as any}>
+            <ElTableColumn
+              type="expand"
+              width={props.expand.width ?? 46}
+              fixed={props.expand.fixed as any}
+            >
               {{
                 default: (scope: any) => slots.expand?.(scope),
               }}

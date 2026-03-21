@@ -69,10 +69,7 @@ export type ProFormItem = {
   clearOnDependenciesChange?: boolean | ((ctx: { model: ProFormModel }) => boolean)
 
   /** ✅ 将 request 返回值转换为 ProFormOption[] */
-  transformOptions?: (
-    raw: any,
-    ctx: { model: ProFormModel; item: ProFormItem }
-  ) => ProFormOption[]
+  transformOptions?: (raw: any, ctx: { model: ProFormModel; item: ProFormItem }) => ProFormOption[]
 }
 
 export type ProFormProps = {

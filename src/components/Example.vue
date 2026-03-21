@@ -14,11 +14,7 @@
     >
       <!-- field 同名插槽：完全自定义渲染 -->
       <template #customSlot="{ model, field }">
-        <el-input
-          v-model="model[field]"
-          placeholder="通过 slot 自定义内容"
-          clearable
-        />
+        <el-input v-model="model[field]" placeholder="通过 slot 自定义内容" clearable />
       </template>
     </ProForm>
 
@@ -57,22 +53,36 @@ const formModel = reactive({
   meetingTime: '',
   age: 18,
   region: [],
-  customSlot: ''
+  customSlot: '',
 })
 
 const formSchema: ProFormItem[] = [
-  { field: 'name', label: '文本（text）', valueType: 'text', rules: [{ required: true, message: '请输入姓名', trigger: 'blur' }], placeholder: '请输入姓名', colSpan: 8 },
-  { field: 'description', label: '多行（textarea）', valueType: 'textarea', rows: 3, placeholder: '请输入描述', colSpan: 16 },
+  {
+    field: 'name',
+    label: '文本（text）',
+    valueType: 'text',
+    rules: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+    placeholder: '请输入姓名',
+    colSpan: 8,
+  },
+  {
+    field: 'description',
+    label: '多行（textarea）',
+    valueType: 'textarea',
+    rows: 3,
+    placeholder: '请输入描述',
+    colSpan: 16,
+  },
   {
     field: 'status',
     label: '下拉选择（select）',
     valueType: 'select',
     valueEnum: [
       { value: 'enabled', label: '启用' },
-      { value: 'disabled', label: '禁用' }
+      { value: 'disabled', label: '禁用' },
     ],
     placeholder: '请选择状态',
-    colSpan: 8
+    colSpan: 8,
   },
   {
     field: 'gender',
@@ -80,7 +90,7 @@ const formSchema: ProFormItem[] = [
     valueType: 'radio',
     valueEnum: { male: '男', female: '女' },
     defaultValue: 'male',
-    colSpan: 8
+    colSpan: 8,
   },
   {
     field: 'hobbies',
@@ -89,10 +99,10 @@ const formSchema: ProFormItem[] = [
     valueEnum: [
       { value: 'music', label: '音乐' },
       { value: 'sport', label: '运动' },
-      { value: 'travel', label: '旅行' }
+      { value: 'travel', label: '旅行' },
     ],
     defaultValue: ['music'],
-    colSpan: 8
+    colSpan: 8,
   },
   {
     field: 'notify',
@@ -100,28 +110,28 @@ const formSchema: ProFormItem[] = [
     valueType: 'switch',
     defaultValue: true,
     componentProps: { activeText: '开', inactiveText: '关' },
-    colSpan: 8
+    colSpan: 8,
   },
   {
     field: 'birthday',
     label: '日期（date）',
     valueType: 'date',
     placeholder: '请选择生日',
-    colSpan: 8
+    colSpan: 8,
   },
   {
     field: 'meetingTime',
     label: '日期时间（datetime）',
     valueType: 'datetime',
     placeholder: '请选择会议时间',
-    colSpan: 8
+    colSpan: 8,
   },
   {
     field: 'age',
     label: '自定义组件（component）',
     component: ElInputNumber,
     componentProps: { min: 0, max: 120, step: 1, controlsPosition: 'right' },
-    colSpan: 8
+    colSpan: 8,
   },
   {
     field: 'region',
@@ -133,37 +143,37 @@ const formSchema: ProFormItem[] = [
         label: '浙江',
         children: [
           { value: 'hangzhou', label: '杭州' },
-          { value: 'ningbo', label: '宁波' }
-        ]
+          { value: 'ningbo', label: '宁波' },
+        ],
       },
       {
         value: 'jiangsu',
         label: '江苏',
         children: [
           { value: 'nanjing', label: '南京' },
-          { value: 'suzhou', label: '苏州' }
-        ]
-      }
+          { value: 'suzhou', label: '苏州' },
+        ],
+      },
     ],
     componentProps: {
       clearable: true,
-      props: { checkStrictly: true }
+      props: { checkStrictly: true },
     },
-    colSpan: 8
+    colSpan: 8,
   },
   {
     field: 'customSlot',
     label: '插槽（slot）',
     slot: 'customSlot',
     placeholder: '插槽不会使用内置控件',
-    colSpan: 16
-  }
+    colSpan: 16,
+  },
 ]
 
 const inlineModel = reactive({
   keyword: '',
   type: '',
-  time: ''
+  time: '',
 })
 
 const inlineSchema: ProFormItem[] = [
@@ -172,14 +182,14 @@ const inlineSchema: ProFormItem[] = [
     field: 'type',
     label: '类型',
     valueType: 'select',
-    valueEnum: { A: '类型 A', B: '类型 B' }
+    valueEnum: { A: '类型 A', B: '类型 B' },
   },
   {
     field: 'time',
     label: '时间',
     valueType: 'date',
-    componentProps: { clearable: true }
-  }
+    componentProps: { clearable: true },
+  },
 ]
 
 function onSubmit(values: Record<string, any>) {

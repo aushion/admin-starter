@@ -12,7 +12,6 @@
 
     <ProTable
       title="用户列表"
-      
       :columns="columns"
       :request="fetchList"
       :request-extra="searchModel"
@@ -56,7 +55,7 @@ type UserRow = {
 
 const searchModel = reactive<{ name?: string; status?: any }>({
   name: '',
-  status: undefined
+  status: undefined,
 })
 
 const searchSchema: ProFormItem[] = [
@@ -69,9 +68,9 @@ const searchSchema: ProFormItem[] = [
     colSpan: 6,
     valueEnum: {
       1: '启用',
-      0: '禁用'
-    }
-  }
+      0: '禁用',
+    },
+  },
 ]
 
 const columns: ProColumn<UserRow>[] = [
@@ -83,11 +82,11 @@ const columns: ProColumn<UserRow>[] = [
     valueType: 'tag',
     valueEnum: {
       1: { text: '启用', status: 'success' },
-      0: { text: '禁用', status: 'info' }
-    }
+      0: { text: '禁用', status: 'info' },
+    },
   },
   { title: '创建时间', dataIndex: 'createdAt', width: 180, sortable: true },
-  { title: '操作', dataIndex: 'id', width: 160, slot: 'action', align: 'center' }
+  { title: '操作', dataIndex: 'id', width: 160, slot: 'action', align: 'center' },
 ]
 
 // 模拟后端请求
@@ -102,7 +101,7 @@ async function fetchList(params: RequestParams) {
       id,
       name: (params.name ? String(params.name) : '用户') + ' ' + id,
       status: id % 2 ? 1 : 0,
-      createdAt: '2025-01-01 12:00:00'
+      createdAt: '2025-01-01 12:00:00',
     }
   })
 
@@ -124,13 +123,24 @@ const editFormRef = ref<InstanceType<typeof ProForm> | null>(null)
 const formModel = reactive<{ id?: number; name?: string; status?: 0 | 1; remark?: string }>({
   name: '',
   status: 1,
-  remark: ''
+  remark: '',
 })
 
 const formSchema: ProFormItem[] = [
-  { field: 'name', label: '姓名', valueType: 'text', rules: [{ required: true, message: '请输入姓名', trigger: 'blur' }] },
-  { field: 'status', label: '状态', valueType: 'radio', valueEnum: { 1: '启用', 0: '禁用' }, defaultValue: 1 },
-  { field: 'remark', label: '备注', valueType: 'textarea', colSpan: 24 }
+  {
+    field: 'name',
+    label: '姓名',
+    valueType: 'text',
+    rules: [{ required: true, message: '请输入姓名', trigger: 'blur' }],
+  },
+  {
+    field: 'status',
+    label: '状态',
+    valueType: 'radio',
+    valueEnum: { 1: '启用', 0: '禁用' },
+    defaultValue: 1,
+  },
+  { field: 'remark', label: '备注', valueType: 'textarea', colSpan: 24 },
 ]
 
 function openEdit(row: UserRow) {

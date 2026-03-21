@@ -14,7 +14,7 @@ const _views = ref<TagView[]>([])
 
 function getTitle(route: RouteLocationNormalizedLoaded) {
   const t = route.meta?.title
-  return (typeof t === 'string' && t.trim()) ? t : (route.name ? String(route.name) : route.path)
+  return typeof t === 'string' && t.trim() ? t : route.name ? String(route.name) : route.path
 }
 
 function isSameTag(a: TagView, b: TagView) {
@@ -39,8 +39,8 @@ export function useTagsView() {
   // 给 keep-alive 用（注意：keep-alive 匹配的是组件 name，不是 route name；下面会教你怎么启用）
   const cachedNames = computed(() => {
     return _views.value
-      .filter(v => v.keepAlive && typeof v.name === 'string')
-      .map(v => v.name as string)
+      .filter((v) => v.keepAlive && typeof v.name === 'string')
+      .map((v) => v.name as string)
   })
 
   function initAffixTags(router: Router) {
@@ -48,7 +48,7 @@ export function useTagsView() {
     const affix: TagView[] = []
 
     const walk = (routes: any[], basePath = '') => {
-      routes.forEach(r => {
+      routes.forEach((r) => {
         const full = r.path.startsWith('/') ? r.path : `${basePath}/${r.path}`.replace(/\/+/g, '/')
         if (r.meta?.affix) {
           affix.push({
@@ -68,7 +68,7 @@ export function useTagsView() {
     // 去重
     const uniq: TagView[] = []
     for (const t of affix) {
-      if (!uniq.some(x => x.fullPath === t.fullPath)) uniq.push(t)
+      if (!uniq.some((x) => x.fullPath === t.fullPath)) uniq.push(t)
     }
 
     // 只初始化一次
@@ -78,21 +78,21 @@ export function useTagsView() {
   function addView(route: RouteLocationNormalizedLoaded) {
     // 不加入没有标题的页面也行，这里按 meta.title / name 兜底
     const tag = normalize(route)
-    if (_views.value.some(v => isSameTag(v, tag))) return
+    if (_views.value.some((v) => isSameTag(v, tag))) return
     _views.value.push(tag)
   }
 
   function removeView(tag: TagView) {
     if (tag.affix) return
-    _views.value = _views.value.filter(v => !isSameTag(v, tag))
+    _views.value = _views.value.filter((v) => !isSameTag(v, tag))
   }
 
   function removeOthers(tag: TagView) {
-    _views.value = _views.value.filter(v => v.affix || isSameTag(v, tag))
+    _views.value = _views.value.filter((v) => v.affix || isSameTag(v, tag))
   }
 
   function removeAll() {
-    _views.value = _views.value.filter(v => v.affix)
+    _views.value = _views.value.filter((v) => v.affix)
   }
 
   return {

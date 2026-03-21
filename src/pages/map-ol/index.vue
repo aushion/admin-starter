@@ -56,13 +56,13 @@ type HeatPointEx = HeatPoint & {
 
 const BEIJING_CLUSTERS: ClusterSeed[] = [
   { lon: 116.4074, lat: 39.9042, ratio: 0.18, sigmaKm: 4.8, peak: 1.0 },
-  { lon: 116.4551, lat: 39.9220, ratio: 0.20, sigmaKm: 6.5, peak: 0.95 },
-  { lon: 116.2970, lat: 39.9593, ratio: 0.16, sigmaKm: 6.2, peak: 0.92 },
+  { lon: 116.4551, lat: 39.922, ratio: 0.2, sigmaKm: 6.5, peak: 0.95 },
+  { lon: 116.297, lat: 39.9593, ratio: 0.16, sigmaKm: 6.2, peak: 0.92 },
   { lon: 116.3339, lat: 39.7267, ratio: 0.14, sigmaKm: 5.5, peak: 0.86 },
-  { lon: 116.1767, lat: 39.7353, ratio: 0.10, sigmaKm: 7.0, peak: 0.72 },
+  { lon: 116.1767, lat: 39.7353, ratio: 0.1, sigmaKm: 7.0, peak: 0.72 },
   { lon: 116.6535, lat: 40.1289, ratio: 0.08, sigmaKm: 7.5, peak: 0.68 },
   { lon: 116.1076, lat: 40.2208, ratio: 0.07, sigmaKm: 8.0, peak: 0.62 },
-  { lon: 116.8434, lat: 39.9284, ratio: 0.07, sigmaKm: 8.5, peak: 0.60 },
+  { lon: 116.8434, lat: 39.9284, ratio: 0.07, sigmaKm: 8.5, peak: 0.6 },
 ]
 
 // ─── 随机数据生成 ──────────────────────────────
@@ -251,7 +251,10 @@ function rebuildGridHeat() {
   if (targetPoints.value.length === 0) return
 
   const [minX, minY, maxX, maxY] = geom.getExtent() as [number, number, number, number]
-  const cellSize = Math.max(GRID_MIN_SIZE_M, Math.min(GRID_MAX_SIZE_M, viewport.resolution.value * GRID_BASE_PIXEL))
+  const cellSize = Math.max(
+    GRID_MIN_SIZE_M,
+    Math.min(GRID_MAX_SIZE_M, viewport.resolution.value * GRID_BASE_PIXEL),
+  )
   gridCellSize.value = Math.round(cellSize)
 
   const cols = Math.max(1, Math.ceil((maxX - minX) / cellSize))
@@ -451,15 +454,25 @@ onUnmounted(() => {
     <div ref="popupEl" class="ol-popup" :class="{ 'ol-popup--visible': hoveredPoint }">
       <template v-if="hoveredPoint">
         <div class="ol-popup__title">ID: {{ hoveredPoint.id }}</div>
-        <div class="ol-popup__row"><span class="ol-popup__label">经度</span><span>{{ hoveredPoint.lon.toFixed(6) }}</span></div>
-        <div class="ol-popup__row"><span class="ol-popup__label">纬度</span><span>{{ hoveredPoint.lat.toFixed(6) }}</span></div>
-        <div class="ol-popup__row"><span class="ol-popup__label">权重</span><span>{{ hoveredPoint.weight.toFixed(4) }}</span></div>
-        <div class="ol-popup__row"><span class="ol-popup__label">聚簇峰值</span><span>{{ hoveredPoint.clusterPeak }}</span></div>
+        <div class="ol-popup__row">
+          <span class="ol-popup__label">经度</span><span>{{ hoveredPoint.lon.toFixed(6) }}</span>
+        </div>
+        <div class="ol-popup__row">
+          <span class="ol-popup__label">纬度</span><span>{{ hoveredPoint.lat.toFixed(6) }}</span>
+        </div>
+        <div class="ol-popup__row">
+          <span class="ol-popup__label">权重</span><span>{{ hoveredPoint.weight.toFixed(4) }}</span>
+        </div>
+        <div class="ol-popup__row">
+          <span class="ol-popup__label">聚簇峰值</span><span>{{ hoveredPoint.clusterPeak }}</span>
+        </div>
       </template>
     </div>
 
     <div class="absolute left-4 top-4 z-20 w-94 max-w-[calc(100vw-2rem)]">
-      <ElCard class="rounded-4 border-0 bg-white/88 shadow-2xl shadow-slate-900/12 backdrop-blur-md">
+      <ElCard
+        class="rounded-4 border-0 bg-white/88 shadow-2xl shadow-slate-900/12 backdrop-blur-md"
+      >
         <div class="flex items-center justify-between gap-3">
           <div class="text-sm font-semibold text-slate-700">选区网格热力控制台</div>
           <ElTag size="small" :type="gridHeatVisible ? 'success' : 'info'">
@@ -469,16 +482,23 @@ onUnmounted(() => {
 
         <div class="mt-3 flex flex-wrap items-center gap-2">
           <ElButton type="primary" size="small" @click="beginDraw('rect')">矩形框选</ElButton>
-          <ElButton type="primary" plain size="small" @click="beginDraw('polygon')">多边形框选</ElButton>
+          <ElButton type="primary" plain size="small" @click="beginDraw('polygon')"
+            >多边形框选</ElButton
+          >
           <ElButton size="small" @click="clearSelection">清空框选</ElButton>
           <ElButton size="small" @click="refresh">刷新 {{ POINT_COUNT }} 点</ElButton>
           <ElButton size="small" @click="applyBalancedPreset">均衡预设</ElButton>
         </div>
 
         <div class="mt-2 rounded-3 bg-slate-50 px-3 py-2 text-xs text-slate-600 leading-5">
-          当前绘制模式：<span class="font-semibold">{{ draw.mode.value === 'none' ? '无' : draw.mode.value === 'rect' ? '矩形' : '多边形' }}</span>
-          ，选中点位 <span class="font-semibold">{{ selectedPointCount }}</span> 个，网格 <span class="font-semibold">{{ gridCellCount }}</span> 个。
-          网格尺寸约 <span class="font-semibold">{{ gridCellSize || '-' }}</span> 米，Zoom <span class="font-semibold">{{ viewport.zoom.value.toFixed(2) }}</span>。
+          当前绘制模式：<span class="font-semibold">{{
+            draw.mode.value === 'none' ? '无' : draw.mode.value === 'rect' ? '矩形' : '多边形'
+          }}</span>
+          ，选中点位 <span class="font-semibold">{{ selectedPointCount }}</span> 个，网格
+          <span class="font-semibold">{{ gridCellCount }}</span> 个。 网格尺寸约
+          <span class="font-semibold">{{ gridCellSize || '-' }}</span> 米，Zoom
+          <span class="font-semibold">{{ viewport.zoom.value.toFixed(2) }}</span
+          >。
         </div>
 
         <ElDivider class="my-3" />

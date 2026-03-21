@@ -34,13 +34,24 @@ export const routes: RouteRecordRaw[] = [
         path: 'dashboard',
         name: 'Dashboard',
         component: () => import('@/pages/dashboard/index.vue'),
-        meta: { title: '仪表盘', icon: 'i-carbon-dashboard', affix: true, keepAlive: true, permissions: ['dashboard:view'] },
+        meta: {
+          title: '仪表盘',
+          icon: 'i-carbon-dashboard',
+          affix: true,
+          keepAlive: true,
+          permissions: ['dashboard:view'],
+        },
       },
       {
         path: 'charts',
         name: 'Charts',
         component: () => import('@/pages/charts/index.vue'),
-        meta: { title: 'ECharts', icon: 'i-carbon-chart-bar', keepAlive: true, permissions: ['charts:view'] },
+        meta: {
+          title: 'ECharts',
+          icon: 'i-carbon-chart-bar',
+          keepAlive: true,
+          permissions: ['charts:view'],
+        },
       },
       {
         path: 'icon',
@@ -54,7 +65,7 @@ export const routes: RouteRecordRaw[] = [
         component: () => import('@/pages/map-cesium/index.vue'),
         meta: { title: 'Cesium', icon: 'i-carbon-earth', permissions: ['map:cesium'] },
       },
-       {
+      {
         path: 'map-ol',
         name: 'MapOl',
         component: () => import('@/pages/map-ol/index.vue'),
@@ -76,7 +87,11 @@ export const routes: RouteRecordRaw[] = [
         path: 'excel',
         name: 'Excel',
         component: () => import('@/pages/excel/index.vue'),
-        meta: { title: 'Excel 导出', icon: 'i-carbon-document-export', permissions: ['excel:export'] },
+        meta: {
+          title: 'Excel 导出',
+          icon: 'i-carbon-document-export',
+          permissions: ['excel:export'],
+        },
       },
     ],
   },

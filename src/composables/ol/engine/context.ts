@@ -1,4 +1,11 @@
-import { getCurrentInstance, inject, provide, shallowRef, type InjectionKey, type ShallowRef } from 'vue'
+import {
+  getCurrentInstance,
+  inject,
+  provide,
+  shallowRef,
+  type InjectionKey,
+  type ShallowRef,
+} from 'vue'
 import type OlMap from 'ol/Map'
 
 export interface MapEngine {
@@ -27,10 +34,15 @@ export function useMapEngine(): MapEngine {
     appContext?: { provides?: Record<PropertyKey, unknown> }
   }
   const instance = getCurrentInstance() as unknown as InstanceProvides | null
-  const ownProvided = instance?.provides?.[MAP_ENGINE_KEY as unknown as symbol] as MapEngine | undefined
-  const appProvided = instance?.appContext?.provides?.[MAP_ENGINE_KEY as unknown as symbol] as MapEngine | undefined
+  const ownProvided = instance?.provides?.[MAP_ENGINE_KEY as unknown as symbol] as
+    | MapEngine
+    | undefined
+  const appProvided = instance?.appContext?.provides?.[MAP_ENGINE_KEY as unknown as symbol] as
+    | MapEngine
+    | undefined
   const engine = ownProvided ?? appProvided ?? null
 
-  if (!engine) throw new Error('[MapEngine] not provided. Call provideMapEngine(createMapEngine()).')
+  if (!engine)
+    throw new Error('[MapEngine] not provided. Call provideMapEngine(createMapEngine()).')
   return engine
 }

@@ -1,12 +1,13 @@
 {
   "name": "admin-starter",
-  "private": true,
   "version": "0.0.0",
+  "private": true,
   "type": "module",
   "scripts": {
-    "dev": "vite",
-    "build": "vite build",
-    "preview": "vite preview"
+    "dev": "vp dev",
+    "build": "vp build",
+    "preview": "vp preview",
+    "prepare": "vp config"
   },
   "dependencies": {
     "@antv/x6": "^2.19.2",
@@ -42,8 +43,14 @@
     "@vue/tsconfig": "^0.8.1",
     "typescript": "~5.9.3",
     "unocss": "^66.5.12",
-    "vite": "^7.2.4",
+    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
     "vite-plugin-static-copy": "^3.1.4",
+    "vite-plus": "latest",
     "vue-tsc": "^3.1.4"
-  }
+  },
+  "overrides": {
+    "vite": "npm:@voidzero-dev/vite-plus-core@latest",
+    "vitest": "npm:@voidzero-dev/vite-plus-test@latest"
+  },
+  "packageManager": "npm@11.12.0"
 }

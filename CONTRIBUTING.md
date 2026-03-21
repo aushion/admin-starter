@@ -6,10 +6,10 @@
 
 ## 一、设计目标
 
-* 提升**组件可维护性**与**长期演进能力**
-* 保证 **TypeScript 类型体验（IDE 智能提示）**
-* 在 Vue 生态下，合理引入 **TSX / JSX**，避免过度复杂
-* 兼容 **VS Code（Volar）** 与 **WebStorm（JetBrains）**
+- 提升**组件可维护性**与**长期演进能力**
+- 保证 **TypeScript 类型体验（IDE 智能提示）**
+- 在 Vue 生态下，合理引入 **TSX / JSX**，避免过度复杂
+- 兼容 **VS Code（Volar）** 与 **WebStorm（JetBrains）**
 
 ---
 
@@ -25,17 +25,17 @@
 
 以下组件 **强烈推荐使用纯 `.tsx` 文件**：
 
-* ProTable / ProForm / ProDialog
-* 表格列渲染器（columns.render）
-* Schema / 配置驱动 UI
-* 递归渲染组件（多级表头、树、表单嵌套）
-* 需要强类型 props / 泛型推断 / IDE 完整补全的基础组件
+- ProTable / ProForm / ProDialog
+- 表格列渲染器（columns.render）
+- Schema / 配置驱动 UI
+- 递归渲染组件（多级表头、树、表单嵌套）
+- 需要强类型 props / 泛型推断 / IDE 完整补全的基础组件
 
 **原因：**
 
-* TSX = 原生 TypeScript + JSX，IDE 解析路径最短
-* WebStorm 对 `.tsx` props / 泛型提示更稳定
-* JSX 写复杂渲染逻辑比 `h()` / template 更清晰
+- TSX = 原生 TypeScript + JSX，IDE 解析路径最短
+- WebStorm 对 `.tsx` props / 泛型提示更稳定
+- JSX 写复杂渲染逻辑比 `h()` / template 更清晰
 
 ✅ 示例：
 
@@ -53,16 +53,16 @@ components/
 
 以下组件 **推荐使用 `.vue` 单文件组件**：
 
-* 页面级组件（views/pages）
-* 业务组件（非高度抽象）
-* 布局组件（Layout / Header / Sidebar）
-* 样式/结构占比高的组件
+- 页面级组件（views/pages）
+- 业务组件（非高度抽象）
+- 布局组件（Layout / Header / Sidebar）
+- 样式/结构占比高的组件
 
 **原因：**
 
-* Template 结构清晰，团队可读性更高
-* scoped style / CSS / 动画支持更自然
-* Vue 官方生态与 DevTools 体验最佳
+- Template 结构清晰，团队可读性更高
+- scoped style / CSS / 动画支持更自然
+- Vue 官方生态与 DevTools 体验最佳
 
 ---
 
@@ -70,18 +70,18 @@ components/
 
 该写法 **仅用于“局部 JSX 需求”**，不作为主流形态：
 
-* 少量 render 逻辑
-* 局部 slot/render 函数
+- 少量 render 逻辑
+- 局部 slot/render 函数
 
 ❌ 不推荐：
 
-* 整个组件都在写 JSX
-* 大量递归 / 配置驱动逻辑
+- 整个组件都在写 JSX
+- 大量递归 / 配置驱动逻辑
 
 **理由：**
 
-* SFC + TSX 会叠加 Vue + TSX 的复杂度
-* WebStorm 对该组合的类型提示不如纯 TSX 稳定
+- SFC + TSX 会叠加 Vue + TSX 的复杂度
+- WebStorm 对该组合的类型提示不如纯 TSX 稳定
 
 ---
 
@@ -143,16 +143,16 @@ render?: (scope: {
 
 目标：
 
-* columns.render 使用体验接近 React
-* IDE 可完整提示 `row.xxx`
+- columns.render 使用体验接近 React
+- IDE 可完整提示 `row.xxx`
 
 ---
 
 ### 4.3 dataIndex 规范
 
-* 支持：`dataIndex: 'a.b.c'`
-* 不建议在 render 内手动 `row.xxx.xxx`
-* 统一通过 `getByPath` 工具函数
+- 支持：`dataIndex: 'a.b.c'`
+- 不建议在 render 内手动 `row.xxx.xxx`
+- 统一通过 `getByPath` 工具函数
 
 ---
 
@@ -160,9 +160,9 @@ render?: (scope: {
 
 ### 5.1 columns/schema 设计原则
 
-* **配置即 UI**，避免业务逻辑写进组件
-* render > slot > valueEnum > default
-* 无 dataIndex 的列必须提供 `key`
+- **配置即 UI**，避免业务逻辑写进组件
+- render > slot > valueEnum > default
+- 无 dataIndex 的列必须提供 `key`
 
 ---
 
@@ -177,9 +177,9 @@ render?: (scope: {
 
 ### 5.3 多级表头 / 嵌套规则
 
-* 父列（有 children）**不允许**配置 `prop`
-* 叶子列才绑定 `prop / sortable`
-* 子列必须作为 `ElTableColumn` 的 children
+- 父列（有 children）**不允许**配置 `prop`
+- 叶子列才绑定 `prop / sortable`
+- 子列必须作为 `ElTableColumn` 的 children
 
 ---
 
@@ -187,15 +187,15 @@ render?: (scope: {
 
 ### 6.1 VS Code
 
-* 使用 Volar
-* TypeScript 使用项目内版本
+- 使用 Volar
+- TypeScript 使用项目内版本
 
 ### 6.2 WebStorm（重点）
 
-* Settings → TypeScript → 使用 `node_modules/typescript`
-* Vue Language Server = Auto / Volar
-* 启用 service-powered type engine
-* 优先使用 `.tsx` 编写基础组件
+- Settings → TypeScript → 使用 `node_modules/typescript`
+- Vue Language Server = Auto / Volar
+- 启用 service-powered type engine
+- 优先使用 `.tsx` 编写基础组件
 
 ---
 
@@ -203,8 +203,8 @@ render?: (scope: {
 
 允许破例，但必须满足：
 
-* 有明确说明（README / 注释）
-* 破例能显著降低复杂度
+- 有明确说明（README / 注释）
+- 破例能显著降低复杂度
 
 ---
 
@@ -219,6 +219,6 @@ render?: (scope: {
 
 📌 本规范适用于：
 
-* Vue3 + TypeScript 项目
-* 中后台 / 管理系统
-* 需要长期维护的组件库
+- Vue3 + TypeScript 项目
+- 中后台 / 管理系统
+- 需要长期维护的组件库

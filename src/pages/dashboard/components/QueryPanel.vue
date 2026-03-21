@@ -44,12 +44,7 @@
 <script setup lang="ts">
 import { computed } from 'vue'
 import ProForm, { type ProFormItem } from '@/components/ProForm'
-import type {
-  AdvancedQueryForm,
-  BasicQueryForm,
-  QueryTabKey,
-  TabQueryPayload,
-} from '../types'
+import type { AdvancedQueryForm, BasicQueryForm, QueryTabKey, TabQueryPayload } from '../types'
 
 const props = withDefaults(
   defineProps<{

@@ -46,9 +46,10 @@ function toArray(input?: string | string[]) {
 }
 
 function loadPreset(): PresetKey {
-  const cached = typeof localStorage !== 'undefined'
-    ? (localStorage.getItem(STORAGE_KEY) as PresetKey | null)
-    : null
+  const cached =
+    typeof localStorage !== 'undefined'
+      ? (localStorage.getItem(STORAGE_KEY) as PresetKey | null)
+      : null
   return cached && PRESETS[cached] ? cached : 'admin'
 }
 
@@ -81,13 +82,13 @@ export const usePermissionStore = defineStore('permission', {
     hasRole(roles?: string | string[]) {
       const required = toArray(roles)
       if (required.length === 0) return true
-      return required.some(r => this.roles.includes(r))
+      return required.some((r) => this.roles.includes(r))
     },
     hasPermission(perms?: PermissionCode | PermissionCode[]) {
       const required = toArray(perms)
       if (required.length === 0) return true
       if (this.permissions.includes('*')) return true
-      return required.every(p => this.permissions.includes(p))
+      return required.every((p) => this.permissions.includes(p))
     },
     canAccess(meta?: AccessMeta) {
       if (!meta || meta.public) return true

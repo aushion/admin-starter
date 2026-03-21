@@ -31,15 +31,14 @@ function fallbackTransform(raw: any): ProFormOption[] {
   }
 
   // 2) 常见：{ data/list/records/rows/result/items: [] }
-  const list =
-    raw?.data ?? raw?.list ?? raw?.records ?? raw?.rows ?? raw?.result ?? raw?.items
+  const list = raw?.data ?? raw?.list ?? raw?.records ?? raw?.rows ?? raw?.result ?? raw?.items
   if (Array.isArray(list)) return fallbackTransform(list)
 
   // 3) 对象映射：{ "1":"启用","0":"禁用" }
   if (typeof raw === 'object') {
     return Object.keys(raw).map((k) => ({
       value: k,
-      label: typeof raw[k] === 'string' ? raw[k] : raw[k]?.label ?? raw[k]?.text ?? String(k),
+      label: typeof raw[k] === 'string' ? raw[k] : (raw[k]?.label ?? raw[k]?.text ?? String(k)),
       children: Array.isArray(raw[k]?.children) ? fallbackTransform(raw[k].children) : undefined,
       disabled: raw[k]?.disabled,
     }))
@@ -135,9 +134,7 @@ export function useRemoteOptions(params: {
           // 清空策略：默认 true，可配置
           const clearCfg = item.clearOnDependenciesChange
           const shouldClear =
-            typeof clearCfg === 'function'
-              ? !!clearCfg({ model })
-              : clearCfg !== false
+            typeof clearCfg === 'function' ? !!clearCfg({ model }) : clearCfg !== false
 
           if (!shouldClear) return
           if (isInitializing()) return
@@ -149,7 +146,7 @@ export function useRemoteOptions(params: {
 
           updateField(item.field, undefined)
         },
-        { deep: false }
+        { deep: false },
       )
 
       depStops.push(stop)

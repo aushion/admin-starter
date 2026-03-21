@@ -42,6 +42,7 @@ import ProDialog, { type ProDialogProps } from '@/components/ProDialog'
 **场景**：列表页、可配置列、支持后端分页/排序、JSX 渲染。
 
 **核心能力**
+
 - `columns.render`（JSX / React 风格）与 `slot/headerSlot`（Vue 风格）双支持
 - `valueEnum` 映射（含 `status` -> `ElTag`），`valueType: 'tag'`
 - 嵌套多级表头 `children`
@@ -79,8 +80,12 @@ const columns: ProColumn<User>[] = [
     width: 200,
     render: ({ row }) => (
       <>
-        <el-button size="small" onClick={() => console.log('edit', row)}>Edit</el-button>
-        <el-button size="small" type="danger" onClick={() => console.log('delete', row)}>Delete</el-button>
+        <el-button size="small" onClick={() => console.log('edit', row)}>
+          Edit
+        </el-button>
+        <el-button size="small" type="danger" onClick={() => console.log('delete', row)}>
+          Delete
+        </el-button>
       </>
     ),
   },
@@ -106,10 +111,8 @@ const fetchList = async (params: RequestParams) => {
   <template #nameHeader><span>Name 🔥</span></template>
 </ProTable>
 
-const columns = [
-  { title: 'Name', dataIndex: 'name' },                   // #name
-  { title: 'Name', dataIndex: 'name', headerSlot: 'nameHeader' }, // #nameHeader
-]
+const columns = [ { title: 'Name', dataIndex: 'name' }, // #name { title: 'Name', dataIndex: 'name',
+headerSlot: 'nameHeader' }, // #nameHeader ]
 ```
 
 **valueEnum + tag**
@@ -131,16 +134,18 @@ const columns: ProColumn[] = [
 **展开行 / 行选择**
 
 ```vue
-<ProTable :columns="columns" :data-source="list" :expand="{ width: 46 }" :row-selection="rowSelection">
+<ProTable
+  :columns="columns"
+  :data-source="list"
+  :expand="{ width: 46 }"
+  :row-selection="rowSelection"
+>
   <template #expand="{ row }">
     <div style="padding:12px"><b>Detail</b><pre>{{ row }}</pre></div>
   </template>
 </ProTable>
 
-const rowSelection = {
-  selectedRowKeys,
-  onChange: (keys) => (selectedRowKeys = keys),
-}
+const rowSelection = { selectedRowKeys, onChange: (keys) => (selectedRowKeys = keys), }
 ```
 
 **暴露方法（ref）**
@@ -148,12 +153,8 @@ const rowSelection = {
 ```vue
 <ProTable ref="tableRef" ... />
 
-tableRef.value?.reload()
-tableRef.value?.reset()
-tableRef.value?.setPage(2)
-tableRef.value?.setPageSize(50)
-tableRef.value?.clearSelection()
-tableRef.value?.getSelectedKeys()
+tableRef.value?.reload() tableRef.value?.reset() tableRef.value?.setPage(2)
+tableRef.value?.setPageSize(50) tableRef.value?.clearSelection() tableRef.value?.getSelectedKeys()
 ```
 
 ---
@@ -163,6 +164,7 @@ tableRef.value?.getSelectedKeys()
 **场景**：查询表单、弹窗内编辑表单、配置驱动表单。
 
 **核心能力**
+
 - `schema` 数组描述字段；`valueType`：text/textarea/select/radio/checkbox/switch/date/datetime/cascader
 - `valueEnum` 生成 options；支持自定义 `component` 或 `slot`（字段同名或 `item.slot`）
 - `defaultValue` 自动回填；`colSpan` + `gutter` 控制布局；`layout` 支持 inline
@@ -173,26 +175,17 @@ tableRef.value?.getSelectedKeys()
 ```vue
 <ProForm v-model="form" :schema="schema" @submit="onSubmit" />
 
-const form = reactive({ name: '', status: 'enabled' })
-const schema: ProFormItem[] = [
-  { field: 'name', label: '姓名', valueType: 'text', rules: [{ required: true, message: '请输入姓名' }] },
-  {
-    field: 'status',
-    label: '状态',
-    valueType: 'select',
-    valueEnum: [
-      { value: 'enabled', label: '启用' },
-      { value: 'disabled', label: '禁用' },
-    ],
-    colSpan: 8,
-  },
-]
+const form = reactive({ name: '', status: 'enabled' }) const schema: ProFormItem[] = [ { field:
+'name', label: '姓名', valueType: 'text', rules: [{ required: true, message: '请输入姓名' }] }, {
+field: 'status', label: '状态', valueType: 'select', valueEnum: [ { value: 'enabled', label: '启用'
+}, { value: 'disabled', label: '禁用' }, ], colSpan: 8, }, ]
 ```
 
 **自定义渲染优先级**
-1) `item.slot`（或字段同名 slot）  
-2) `item.component`（自定义组件，透传 `componentProps`，使用 v-model）  
-3) 内置控件按 `valueType` 渲染
+
+1. `item.slot`（或字段同名 slot）
+2. `item.component`（自定义组件，透传 `componentProps`，使用 v-model）
+3. 内置控件按 `valueType` 渲染
 
 **事件与方法**
 
@@ -215,6 +208,7 @@ formRef.value?.reset()
 **场景**：统一弹窗，支持内置表单模式或自定义内容。
 
 **核心能力**
+
 - 通过 `v-model` 控制可见；`open(payload?)`/`close()`/`submit()`/`validate()`/`reset()` 暴露
 - 可直接嵌入 ProForm：`formSchema + formModel + formProps`
 - Footer 可自定义 slot；默认提供「取消/保存」按钮；`payload`/`submitting` 以 ref 暴露
@@ -231,14 +225,9 @@ formRef.value?.reset()
   @submit="onSubmit"
 />
 
-const schema: ProFormItem[] = [
-  { field: 'name', label: '姓名', valueType: 'text', rules: [{ required: true, message: '必填' }] },
-]
-const model = reactive({ name: '' })
-
-const onSubmit = ({ values, payload }) => {
-  console.log('save', values, payload)
-}
+const schema: ProFormItem[] = [ { field: 'name', label: '姓名', valueType: 'text', rules: [{
+required: true, message: '必填' }] }, ] const model = reactive({ name: '' }) const onSubmit = ({
+values, payload }) => { console.log('save', values, payload) }
 ```
 
 **自定义内容模式**
@@ -261,6 +250,7 @@ dialogRef.value?.open({ title: '编辑用户', values: { name: '张三' } })
 ---
 
 ## 开发约定
+
 - Pro 组件使用 TSX；类型必须在 `types.ts` 中显式导出。
 - 统一从 `index.ts` 引入，避免直接访问实现文件。
 - 无 `dataIndex` 的列/字段需提供唯一 `key`。

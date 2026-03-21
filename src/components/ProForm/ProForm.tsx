@@ -49,7 +49,8 @@ function formatOptions(ve: any): ProFormOption[] {
   return Object.keys(ve).map((k) => {
     const v = (ve as any)[k]
     if (typeof v === 'string') return { value: k, label: v }
-    if (Array.isArray(v?.children)) return { value: k, label: v?.label ?? v?.text ?? String(k), children: v.children }
+    if (Array.isArray(v?.children))
+      return { value: k, label: v?.label ?? v?.text ?? String(k), children: v.children }
     return { value: k, label: v?.label ?? v?.text ?? String(k) }
   })
 }
@@ -57,7 +58,9 @@ function formatOptions(ve: any): ProFormOption[] {
 // 安全获取嵌套值 (如 'user.info.name')
 function getValueByPath(obj: Record<string, any>, path: string) {
   if (!path || !path.includes('.')) return obj[path]
-  return path.split('.').reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), obj)
+  return path
+    .split('.')
+    .reduce((acc, key) => (acc && acc[key] !== undefined ? acc[key] : undefined), obj)
 }
 
 // 安全设置嵌套值（支持自动创建数组/对象）
@@ -105,7 +108,7 @@ export default defineComponent({
     let isInitializing = false
 
     const labelWidthPx = computed(() =>
-      typeof props.labelWidth === 'number' ? `${props.labelWidth}px` : props.labelWidth
+      typeof props.labelWidth === 'number' ? `${props.labelWidth}px` : props.labelWidth,
     )
 
     const visibleItems = computed(() =>
@@ -113,7 +116,7 @@ export default defineComponent({
         const showOk = isFn(i.show) ? !!i.show({ model: innerModel }) : i.show !== false
         const hiddenOk = isFn(i.hidden) ? !!i.hidden({ model: innerModel }) : i.hidden === true
         return showOk && !hiddenOk
-      })
+      }),
     )
 
     function isDisabled(item: ProFormItem) {
@@ -172,7 +175,7 @@ export default defineComponent({
 
         queueMicrotask(() => (isInitializing = false))
       },
-      { immediate: true }
+      { immediate: true },
     )
 
     async function validate() {
@@ -257,7 +260,14 @@ export default defineComponent({
 
       switch (item.valueType) {
         case 'textarea':
-          return <ElInput {...common} type="textarea" rows={(item as any).rows ?? 3} placeholder={placeholder} />
+          return (
+            <ElInput
+              {...common}
+              type="textarea"
+              rows={(item as any).rows ?? 3}
+              placeholder={placeholder}
+            />
+          )
         case 'select':
           return (
             <ElSelect
@@ -267,7 +277,12 @@ export default defineComponent({
               placeholder={placeholder}
             >
               {(getFinalOptions(item) || []).map((opt: ProFormOption) => (
-                <ElOption key={String(opt.value)} label={opt.label} value={opt.value} disabled={opt.disabled} />
+                <ElOption
+                  key={String(opt.value)}
+                  label={opt.label}
+                  value={opt.value}
+                  disabled={opt.disabled}
+                />
               ))}
             </ElSelect>
           )
@@ -383,7 +398,3 @@ export default defineComponent({
     )
   },
 })
-
-
-
-

@@ -1,6 +1,9 @@
 <template>
   <el-card>
-    <div ref="container" class="h-[70vh] w-full border border-gray-200 dark:border-gray-700 rounded"></div>
+    <div
+      ref="container"
+      class="h-[70vh] w-full border border-gray-200 dark:border-gray-700 rounded"
+    ></div>
   </el-card>
 </template>
 

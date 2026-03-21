@@ -10,7 +10,7 @@ function normalize(binding: DirectiveBinding<BindingValue>) {
   const raw = binding.value
 
   if (typeof raw === 'string' || Array.isArray(raw)) {
-    return { value: raw, mode: binding.modifiers.disable ? 'disable' : 'hide' as const }
+    return { value: raw, mode: binding.modifiers.disable ? 'disable' : ('hide' as const) }
   }
 
   const value = raw?.value ?? []

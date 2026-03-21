@@ -5,7 +5,10 @@
       <el-button @click="undo">撤销</el-button>
       <el-button @click="redo">重做</el-button>
     </div>
-    <div ref="container" class="h-[70vh] w-full border border-gray-200 dark:border-gray-700 rounded"></div>
+    <div
+      ref="container"
+      class="h-[70vh] w-full border border-gray-200 dark:border-gray-700 rounded"
+    ></div>
   </el-card>
 </template>
 
@@ -44,6 +47,10 @@ function addNode() {
     label: 'Node',
   })
 }
-function undo() { graph.undo() }
-function redo() { graph.redo() }
+function undo() {
+  graph.undo()
+}
+function redo() {
+  graph.redo()
+}
 </script>

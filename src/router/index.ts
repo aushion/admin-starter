@@ -10,7 +10,7 @@ const router = createRouter({
 
 router.beforeEach((to, _from, next) => {
   const permission = usePermissionStore()
-  const allowed = to.matched.every(r => permission.canAccess(r.meta))
+  const allowed = to.matched.every((r) => permission.canAccess(r.meta))
 
   if (!allowed) {
     return next({ path: '/403', query: { from: to.fullPath }, replace: true })

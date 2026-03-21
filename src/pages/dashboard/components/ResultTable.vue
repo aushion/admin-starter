@@ -82,9 +82,7 @@ function toggleRow(row: DeviceRow, checked: boolean) {
   if (checked) next.add(toKey(row.id))
   else next.delete(toKey(row.id))
 
-  const keys = props.dataSource
-    .map((item) => item.id)
-    .filter((id) => next.has(toKey(id)))
+  const keys = props.dataSource.map((item) => item.id).filter((id) => next.has(toKey(id)))
 
   emitSelection(keys)
 }
@@ -121,7 +119,7 @@ function enumTagType(col: ProColumn<DeviceRow>, raw: unknown) {
   }
 
   const hit = (ve as any)[String(raw)] ?? (ve as any)[raw as any]
-  return typeof hit === 'object' ? hit?.status ?? '' : ''
+  return typeof hit === 'object' ? (hit?.status ?? '') : ''
 }
 
 function renderCell(col: ProColumn<DeviceRow>, rowData: DeviceRow) {
@@ -145,10 +143,8 @@ function renderCell(col: ProColumn<DeviceRow>, rowData: DeviceRow) {
   const text = enumText(col, raw)
 
   if (col.valueType === 'tag') {
-    return h(
-      ElTag,
-      { size: 'small', type: enumTagType(col, raw) as any },
-      () => (text == null ? '-' : String(text)),
+    return h(ElTag, { size: 'small', type: enumTagType(col, raw) as any }, () =>
+      text == null ? '-' : String(text),
     )
   }
 

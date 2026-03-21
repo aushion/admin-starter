@@ -3,12 +3,10 @@ import { defineConfig, presetWind3, presetIcons } from 'unocss'
 import type { IconifyJSON } from '@iconify/types'
 import carbonJson from '@iconify-json/carbon/icons.json'
 const carbonIconSafelist = Object.keys((carbonJson as any).icons || {}).map(
-  name => `i-carbon-${name}`,
+  (name) => `i-carbon-${name}`,
 )
 
-
 export default defineConfig({
-
   // safelist: [
   //   // /^i-carbon-/,
   //   'i-carbon-dashboard',
@@ -27,9 +25,8 @@ export default defineConfig({
       prefix: 'i-', //
       collections: {
         // ✅ 用 loader 函数返回 IconifyJSON（兼容新版类型）
-        carbon: () => import('@iconify-json/carbon/icons.json').then(i => i.default as any),
+        carbon: () => import('@iconify-json/carbon/icons.json').then((i) => i.default as any),
       },
     }),
   ],
-
 })

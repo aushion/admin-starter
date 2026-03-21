@@ -1,5 +1,7 @@
 <template>
-  <div class="h-10 flex items-center px-2 border-b border-gray-200 dark:border-gray-700 bg-[var(--app-bg)]">
+  <div
+    class="h-10 flex items-center px-2 border-b border-gray-200 dark:border-gray-700 bg-[var(--app-bg)]"
+  >
     <el-scrollbar class="w-full">
       <div class="flex items-center gap-2 py-1">
         <el-tag
@@ -52,7 +54,7 @@ function go(tag: TagView) {
 function findFallbackPath() {
   // 优先回到最后一个 tag，否则回 dashboard
   const arr = views.value
-  return (arr[arr.length - 1]?.fullPath) || '/dashboard'
+  return arr[arr.length - 1]?.fullPath || '/dashboard'
 }
 
 async function onClose(tag: TagView) {
@@ -64,7 +66,7 @@ async function onClose(tag: TagView) {
 }
 
 function closeOthers() {
-  const current = views.value.find(v => v.fullPath === route.fullPath)
+  const current = views.value.find((v) => v.fullPath === route.fullPath)
   if (!current) return
   tv.removeOthers(current)
 }

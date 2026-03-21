@@ -16,10 +16,7 @@ import { permissionDirective } from './directives/permission'
 
 const app = createApp(App)
 
-app
-  .use(createPinia())
-  .use(router)
-  .use(ElementPlus)
+app.use(createPinia()).use(router).use(ElementPlus)
 
 app.directive('permission', permissionDirective)
 

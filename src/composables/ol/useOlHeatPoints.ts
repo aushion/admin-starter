@@ -120,10 +120,16 @@ export function useOlHeatPoints(options: UseOlHeatPointsOptions) {
     )
 
     const stopShowHeat = watch(showHeat, (v) => heatLayer.value?.setVisible(v), { immediate: true })
-    const stopShowPoint = watch(showPoint, (v) => pointLayer.value?.setVisible(v), { immediate: true })
+    const stopShowPoint = watch(showPoint, (v) => pointLayer.value?.setVisible(v), {
+      immediate: true,
+    })
 
     return () => {
-      stopPoints(); stopBlur(); stopRadius(); stopShowHeat(); stopShowPoint()
+      stopPoints()
+      stopBlur()
+      stopRadius()
+      stopShowHeat()
+      stopShowPoint()
 
       if (heatLayer.value) map.removeLayer(heatLayer.value)
       if (pointLayer.value) map.removeLayer(pointLayer.value)

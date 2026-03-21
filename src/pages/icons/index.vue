@@ -72,9 +72,11 @@ const all = Object.keys((carbon as any).icons || {}).sort()
 
 // 过滤后的列表
 const filtered = computed(() => {
-  const s = String(q.value ?? '').trim().toLowerCase()
+  const s = String(q.value ?? '')
+    .trim()
+    .toLowerCase()
   if (!s) return all
-  return all.filter(n => n.includes(s))
+  return all.filter((n) => n.includes(s))
 })
 
 // 分页状态

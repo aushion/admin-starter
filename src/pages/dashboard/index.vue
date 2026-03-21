@@ -201,7 +201,8 @@ function queryRowsBasic(filters: BasicQueryForm) {
   const owner = (filters.owner || '').toLowerCase()
 
   return ALL_ROWS.filter((row) => {
-    const hitKeyword = !keyword || row.name.toLowerCase().includes(keyword) || String(row.id).includes(keyword)
+    const hitKeyword =
+      !keyword || row.name.toLowerCase().includes(keyword) || String(row.id).includes(keyword)
     const hitStatus = !filters.status || row.status === filters.status
     const hitZone = !filters.zone || row.zone === filters.zone
     const hitOwner = !owner || row.owner.toLowerCase().includes(owner)
@@ -215,7 +216,8 @@ function queryRowsAdvanced(filters: AdvancedQueryForm) {
   const end = filters.endedAt || ''
 
   return ALL_ROWS.filter((row) => {
-    const hitKeyword = !keyword || row.name.toLowerCase().includes(keyword) || String(row.id).includes(keyword)
+    const hitKeyword =
+      !keyword || row.name.toLowerCase().includes(keyword) || String(row.id).includes(keyword)
     const hitStatus = !filters.status || row.status === filters.status
     const hitZone = !filters.zone || row.zone === filters.zone
     const hitLevel = !filters.level || row.level === filters.level

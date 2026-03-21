@@ -19,7 +19,10 @@ export interface UseOlMapOptions {
   fallbackXyzUrl?: MaybeRef<string | null | undefined>
 }
 
-export function useOlMap(mapEl: MaybeRef<HTMLElement | null | undefined>, options: UseOlMapOptions) {
+export function useOlMap(
+  mapEl: MaybeRef<HTMLElement | null | undefined>,
+  options: UseOlMapOptions,
+) {
   const engine = useMapEngine()
   const baseLayer = shallowRef<TileLayer<XYZ | OSM> | null>(null)
   let resizeObserver: ResizeObserver | null = null
@@ -62,7 +65,9 @@ export function useOlMap(mapEl: MaybeRef<HTMLElement | null | undefined>, option
       const switchToFallback = () => {
         if (switched) return
         switched = true
-        console.warn('[useOlMap] xyzUrl load failed, switched to fallback base map.', { url: primaryUrl })
+        console.warn('[useOlMap] xyzUrl load failed, switched to fallback base map.', {
+          url: primaryUrl,
+        })
         layer.setSource(createFallbackSource())
       }
       primarySource.once('tileloaderror', switchToFallback)

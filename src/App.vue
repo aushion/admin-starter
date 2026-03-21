@@ -6,7 +6,6 @@
 import { onMounted } from 'vue'
 import { useAppStore } from '@/store/app'
 
-
 const app = useAppStore()
 onMounted(() => app.initTheme())
 </script>
