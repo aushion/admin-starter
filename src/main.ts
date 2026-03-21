@@ -13,11 +13,13 @@ import 'element-plus/theme-chalk/dark/css-vars.css'
 
 import '@/styles/theme.css'
 import { permissionDirective } from './directives/permission'
+import { contextMenuDirective } from '@/components/ContextMenu'
 
 const app = createApp(App)
 
 app.use(createPinia()).use(router).use(ElementPlus)
 
 app.directive('permission', permissionDirective)
+app.directive('context-menu', contextMenuDirective)
 
 app.mount('#app')
