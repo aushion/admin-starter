@@ -1,5 +1,6 @@
 <template>
   <div class="dashboard-page">
+    <el-button v-context-menu="{ items: menuItems }">右键</el-button>
     <QueryPanel
       :active-tab="state.activeTab"
       :basic-model="basicFormModel"
@@ -67,6 +68,7 @@ import type {
   TabQueryPayload,
   ZoneCode,
 } from './types'
+import type { ContextMenuItem } from '@/components/ContextMenu'
 
 type TableState = {
   title: string
@@ -77,6 +79,15 @@ type TableState = {
   collapsed: boolean
   selectedKeys: Array<string | number>
 }
+
+const menuItems: ContextMenuItem[] = [
+  { key: 'view', label: '查看', icon: 'i-mdi-eye' },
+  { key: 'edit', label: '编辑', icon: 'i-mdi-pencil' },
+  { key: 'delete', label: '删除', icon: 'i-mdi-delete', divided: true },
+]
+// // Composable 方式
+// const { open } = useContextMenu()
+// open(event, menuItems, context, onSelect)
 
 function createTableState(defaultTitle: string): TableState {
   return {

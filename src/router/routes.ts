@@ -9,6 +9,18 @@ export const routes: RouteRecordRaw[] = [
     component: () => import('@/pages/exception/403.vue'),
     meta: { title: '无权限', hidden: true, public: true },
   },
+  {
+    path: '/login',
+    name: 'Login',
+    component: () => import('@/pages/auth/login.vue'),
+    meta: { title: '登录', hidden: true, public: true },
+  },
+  {
+    path: '/register',
+    name: 'Register',
+    component: () => import('@/pages/auth/register.vue'),
+    meta: { title: '注册', hidden: true, public: true },
+  },
 
   // ✅ 大屏：独立路由树（不带菜单栏）
   // {

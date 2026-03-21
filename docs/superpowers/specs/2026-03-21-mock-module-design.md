@@ -7,7 +7,7 @@
 
 ## Goal
 
-Add a zero-dependency mock module that intercepts `/api/auth/*` requests during development, enabling the login and register pages to work without a real backend.
+Add a zero-dependency mock module that intercepts `/api/auth/*` requests during development, enabling the login page to work without a real backend.
 
 ---
 
@@ -15,64 +15,91 @@ Add a zero-dependency mock module that intercepts `/api/auth/*` requests during 
 
 ```
 mock/
-  index.ts        # Collects and exports all handlers
+  index.ts        # Defines MockHandler / MockResponse types, collects and exports all handlers
   auth.ts         # Handlers for /auth/login and /auth/me
-vite.config.ts    # Registers mockPlugin() in the plugins array
+vite.config.ts    # Defines mockPlugin() inline (order: 'pre'), imports from mock/index.ts
 ```
 
 ---
 
-## MockHandler Type
+## Types (defined in `mock/index.ts`)
 
 ```ts
-type MockHandler = {
+// Discriminated union: success carries data, error does not
+export type MockResponse =
+  | { code: 0; message: string; data: any }
+  | { code: number; message: string }
+
+export type MockHandler = {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
-  url: string // exact path match, e.g. '/auth/login'
-  delay?: number // simulated network delay in ms (default 300)
-  response: (body: any) => any // return value wrapped as { code, message, data }
+  url: string // path with leading slash after /api, e.g. '/auth/login'
+  delay?: number // middleware uses handler.delay ?? 300 ms
+  response: (body: Record<string, any>) => MockResponse
+}
+
+export const handlers: MockHandler[] = [...authHandlers]
+```
+
+---
+
+## Vite Plugin (`mockPlugin` in `vite.config.ts`)
+
+**Compatibility:** `vite-plus`'s `defineConfig` is a transparent wrapper over Vite — the existing config already uses `vue()`, `UnoCSS()`, and `viteStaticCopy()` as standard Vite plugins with no issues. The mock plugin follows the same pattern and is typed as Vite's `Plugin`.
+
+```ts
+import type { Plugin } from 'vite'
+import { handlers } from './mock/index'
+
+function mockPlugin(): Plugin {
+  return {
+    name: 'mock-server',
+    order: 'pre',
+    configureServer(server) {
+      server.middlewares.use(mockMiddleware)
+    },
+  }
 }
 ```
 
----
+**Middleware pipeline:**
 
-## Vite Plugin (`mockPlugin`)
-
-- Defined inline in `vite.config.ts`
-- Only active in dev mode (`configureServer` is not called during build)
-- Registers a Node.js `connect`-style middleware on the Vite dev server
-- Middleware pipeline:
-  1. Check `req.url` starts with `/api/`
-  2. Strip `/api` prefix, then match against registered handlers by `method` + `url`
-  3. Buffer and parse JSON request body
-  4. Wait `handler.delay` ms (default 300)
-  5. Call `handler.response(body)` and send `{ code: 0, message: 'ok', data: result }` as JSON
-  6. If no handler matches, call `next()` to fall through to the normal proxy/network
+1. `req.url` does not start with `/api/` → call `next()` immediately
+2. Extract plain path: `req.url.slice(4).split('?')[0]`
+   - `/api/auth/login` → slice(4) → `/auth/login` → no query → `/auth/login`
+   - `/api/auth/me?foo=1` → slice(4) → `/auth/me?foo=1` → split → `/auth/me`
+   - Handler `url` values include the leading slash (e.g. `'/auth/login'`), so match is exact
+3. Find handler: `handlers.find(h => h.method === req.method?.toUpperCase() && h.url === plainPath)`; if none → `next()`
+4. **Body parsing:**
+   - For methods with a body (`POST`, `PUT`, `PATCH`): buffer `data` events, concatenate, `JSON.parse`; default to `{}` on empty or parse failure
+   - For methods without a body (`GET`, `DELETE`): skip buffering, pass `{}` directly to handler
+5. Await `handler.delay ?? 300` ms via a `setTimeout` promise
+6. Call `handler.response(body)` → `MockResponse`
+7. Set `res.statusCode = 200` and `Content-Type: application/json`
+8. Write `JSON.stringify(mockResponse)` and end the response
+9. If `handler.response()` throws: respond `{ code: 500, message: 'Mock handler error' }`
 
 ---
 
 ## Auth Mock Handlers (`mock/auth.ts`)
 
-| Method | Path          | Behavior                                                                                                                                 |
-| ------ | ------------- | ---------------------------------------------------------------------------------------------------------------------------------------- |
-| `POST` | `/auth/login` | If `body.username` is empty → `{ code: 400, message: '用户名不能为空' }`; otherwise → `{ code: 0, data: { token: 'mock-token-admin' } }` |
-| `GET`  | `/auth/me`    | Always returns `{ code: 0, data: { id: '1', name: '管理员', roles: ['admin'] } }`                                                        |
+| Method | Path          | Behavior                                                                                                                                     |
+| ------ | ------------- | -------------------------------------------------------------------------------------------------------------------------------------------- |
+| `POST` | `/auth/login` | `username` empty → `{ code: 400, message: '用户名不能为空' }`; otherwise → `{ code: 0, message: 'ok', data: { token: 'mock-token-admin' } }` |
+| `GET`  | `/auth/me`    | → `{ code: 0, message: 'ok', data: { id: '1', name: '管理员', roles: ['admin'] } }`                                                          |
+
+Note: password is not validated — intentional for a dev mock.
 
 ---
 
-## Response Envelope
+## Response Contract
 
-All responses use the existing `ApiResp<T>` shape expected by `src/api/http.ts`:
-
-```json
-{ "code": 0, "message": "ok", "data": { ... } }
-```
-
-Error responses use a non-zero code so the axios interceptor shows the error message automatically.
+- HTTP status is always `200`; error signaling is done via JSON `code`, consistent with the existing axios interceptor in `http.ts`
+- `code: 0` responses always include `data`; non-zero responses omit `data` — matching the `MockResponse` discriminated union
 
 ---
 
 ## Constraints
 
-- Mock only runs in dev (`vite dev`), never in production build
+- Dev only (`configureServer` is not invoked during production build)
 - No extra npm packages required
-- `mock/` directory is excluded from the production build naturally (not imported by app code)
+- `mock/` files are Node.js context only — never imported by app source code

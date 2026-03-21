@@ -1,5 +1,5 @@
 import './style.css'
-import { defineComponent, computed, reactive, ref, watchEffect, useSlots, type PropType } from 'vue'
+import { defineComponent, computed, reactive, ref, watch, useSlots, type PropType } from 'vue'
 import { ElTable, ElTableColumn, ElPagination, ElTag } from 'element-plus'
 import type { TableInstance } from 'element-plus'
 import type {
@@ -182,24 +182,33 @@ export default defineComponent({
       }
     }
 
-    // 自动请求：manual=false 时，requestExtra / page / sort 变化自动刷新
-    watchEffect(() => {
-      if (!props.request) return
+    // 同步外部 pagination 到内部状态
+    watch(
+      () => props.pagination,
+      (val) => {
+        if (typeof val === 'object' && val) {
+          if (val.currentPage != null) state.innerPagination.currentPage = val.currentPage
+          if (val.pageSize != null) state.innerPagination.pageSize = val.pageSize
+        }
+      },
+      { immediate: true },
+    )
 
-      // 初次同步外部 pagination（如果传了 object）
-      if (typeof props.pagination === 'object') {
-        if (props.pagination.currentPage != null)
-          state.innerPagination.currentPage = props.pagination.currentPage
-        if (props.pagination.pageSize != null)
-          state.innerPagination.pageSize = props.pagination.pageSize
-      }
+    // 自动请求：manual=false 时，requestExtra 变化自动刷新（重置到第一页）
+    watch(
+      () => props.requestExtra,
+      () => {
+        if (!props.request || props.manual) return
+        state.innerPagination.currentPage = 1
+        fetchData()
+      },
+      { deep: true },
+    )
 
-      if (props.manual) return
-
-      // 让 requestExtra 成为依赖
-      props.requestExtra && JSON.stringify(props.requestExtra)
+    // 初次自动加载
+    if (props.request && !props.manual) {
       fetchData()
-    })
+    }
 
     /* ---------- public methods ---------- */
 
@@ -448,8 +457,7 @@ export default defineComponent({
           rowKey={props.rowKey as any}
           v-loading={loadingComputed.value as any}
           {...props.tableProps}
-          on-sort-change={onSortChange as any}
-          on-selection-change={onSelectionChange as any}
+          {...{ 'onSort-change': onSortChange, 'onSelection-change': onSelectionChange }}
         >
           {/* selection */}
           {props.rowSelection && !hasSelectionColumn.value && (
@@ -493,8 +501,7 @@ export default defineComponent({
               total={pageConfig.value.total}
               pageSizes={pageConfig.value.pageSizes}
               layout={pageConfig.value.layout}
-              on-size-change={setPageSize}
-              on-current-change={setPage}
+              {...{ 'onSize-change': setPageSize, 'onCurrent-change': setPage }}
             />
           </div>
         )}
