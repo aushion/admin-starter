@@ -6,7 +6,12 @@ export function loginApi(username: string, password: string) {
   return post<LoginResp>('/auth/login', { username, password })
 }
 
-export type UserInfo = { id: string; name: string; roles: string[] }
+export type UserInfo = {
+  id: string
+  name: string
+  roles: string[]
+  permissions: string[]
+}
 export function getMeApi() {
   return get<UserInfo>('/auth/me')
 }

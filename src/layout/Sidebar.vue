@@ -27,7 +27,6 @@
 import { computed } from 'vue'
 import { useRoute } from 'vue-router'
 import { useApp } from '../composables/useApp'
-import { routes } from '../router/routes'
 import type { RouteRecordRaw } from 'vue-router'
 import SidebarItem from './MenuItem.vue'
 import { usePermissionStore } from '@/store/permission'
@@ -111,31 +110,11 @@ function buildMenuTree(records: RouteRecordRaw[], base = ''): MenuItem[] {
   return res
 }
 
-function filterByPermission(records: RouteRecordRaw[]): RouteRecordRaw[] {
-  const res: RouteRecordRaw[] = []
-
-  for (const r of records) {
-    if (!r) continue
-    const children = Array.isArray(r.children) ? filterByPermission(r.children) : []
-    const allowed = permission.canAccess(r.meta)
-
-    if (!allowed && children.length === 0) continue
-
-    res.push({
-      ...r,
-      children,
-    })
-  }
-
-  return res
-}
-
 /**
- * 从 routes.ts 里提取 layout 下菜单
+ * 从 permission store 中获取已过滤的动态路由，构建菜单
  */
 const menus = computed<MenuItem[]>(() => {
-  const root = routes.find((r) => r.path === '/')
-  const children = filterByPermission((root?.children || []).filter((r) => !isHidden(r)))
+  const children = (permission.dynamicRoutes || []).filter((r) => !isHidden(r))
   return buildMenuTree(children, '')
 })
 

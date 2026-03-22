@@ -57,6 +57,22 @@
               立即注册
             </el-link>
           </div>
+
+          <!-- 快捷登录按钮 -->
+          <el-divider content-position="center">
+            <span class="text-xs text-[var(--el-text-color-placeholder)]">快捷登录</span>
+          </el-divider>
+          <div class="flex gap-2">
+            <el-button class="flex-1" size="small" @click="quickLogin('admin', 'admin123')">
+              管理员
+            </el-button>
+            <el-button class="flex-1" size="small" @click="quickLogin('ops', 'ops123')">
+              运营
+            </el-button>
+            <el-button class="flex-1" size="small" @click="quickLogin('viewer', 'viewer123')">
+              访客
+            </el-button>
+          </div>
         </el-form>
       </el-card>
     </div>
@@ -65,11 +81,12 @@
 
 <script setup lang="ts">
 import { ref, markRaw } from 'vue'
-import { useRouter } from 'vue-router'
+import { useRouter, useRoute } from 'vue-router'
 import { ElMessage } from 'element-plus'
 import { User, Lock } from '@element-plus/icons-vue'
 import { loginApi } from '@/api/auth'
 import { useAuth } from '@/composables/useAuth'
+import { usePermissionStore } from '@/store/permission'
 
 defineOptions({ name: 'LoginPage' })
 
@@ -77,7 +94,9 @@ const UserIcon = markRaw(User)
 const LockIcon = markRaw(Lock)
 
 const router = useRouter()
+const route = useRoute()
 const { setToken } = useAuth()
+const permission = usePermissionStore()
 
 const formRef = ref()
 const loading = ref(false)
@@ -93,18 +112,38 @@ const rules = {
   password: [{ required: true, message: '请输入密码', trigger: 'blur' }],
 }
 
+async function doLogin(username: string, password: string) {
+  const res = await loginApi(username, password)
+  setToken(res.token)
+  // 重置权限状态，让路由守卫重新拉取
+  permission.resetPermission()
+  ElMessage.success('登录成功')
+  const redirect = (route.query.redirect as string) || '/'
+  router.replace(redirect)
+}
+
 async function handleLogin() {
   await formRef.value?.validate()
   loading.value = true
   try {
-    const res = await loginApi(form.value.username, form.value.password)
-    setToken(res.token)
-    ElMessage.success('登录成功')
-    router.replace('/')
+    await doLogin(form.value.username, form.value.password)
   } catch {
     ElMessage.error('用户名或密码错误')
   } finally {
     loading.value = false
   }
+}
+
+function quickLogin(username: string, password: string) {
+  form.value.username = username
+  form.value.password = password
+  loading.value = true
+  doLogin(username, password)
+    .catch(() => {
+      ElMessage.error('登录失败')
+    })
+    .finally(() => {
+      loading.value = false
+    })
 }
 </script>

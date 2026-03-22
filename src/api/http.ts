@@ -105,6 +105,10 @@ export function createHttpClient() {
           showError(r.message || '登录已过期，请重新登录', resp.config.silent)
           const { logout } = useAuth()
           logout()
+          // 跳转登录页（避免循环依赖，使用 location）
+          if (typeof window !== 'undefined' && !window.location.pathname.startsWith('/login')) {
+            window.location.href = `/login?redirect=${encodeURIComponent(window.location.pathname)}`
+          }
           return Promise.reject(new Error(r.message || 'Unauthorized'))
         }
         showError(r.message || '请求失败', resp.config.silent)

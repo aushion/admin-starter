@@ -18,7 +18,59 @@ type MockHandler = {
   method: 'GET' | 'POST' | 'PUT' | 'DELETE'
   url: string // path with leading slash after /api, e.g. '/auth/login'
   delay?: number
-  response: (body: Record<string, any>) => MockResponse
+  response: (body: Record<string, any>, req?: IncomingMessage) => MockResponse
+}
+
+// ========== Mock 用户数据 ==========
+type MockUser = {
+  id: string
+  name: string
+  roles: string[]
+  permissions: string[]
+  token: string
+}
+
+const MOCK_USERS: Record<string, MockUser> = {
+  admin: {
+    id: '1',
+    name: '管理员',
+    roles: ['admin'],
+    permissions: ['*'],
+    token: 'mock-token-admin',
+  },
+  ops: {
+    id: '2',
+    name: '运营',
+    roles: ['ops'],
+    permissions: [
+      'dashboard:view',
+      'dashboard:open-map',
+      'dashboard:query',
+      'charts:view',
+      'charts:export',
+      'map:cesium',
+      'map:ol',
+      'excel:view',
+    ],
+    token: 'mock-token-ops',
+  },
+  viewer: {
+    id: '3',
+    name: '访客',
+    roles: ['viewer'],
+    permissions: ['dashboard:view'],
+    token: 'mock-token-viewer',
+  },
+}
+
+const MOCK_PASSWORDS: Record<string, string> = {
+  admin: 'admin123',
+  ops: 'ops123',
+  viewer: 'viewer123',
+}
+
+function findUserByToken(token: string): MockUser | undefined {
+  return Object.values(MOCK_USERS).find((u) => u.token === token)
 }
 
 // ========== Mock handlers（新增接口在此追加） ==========
@@ -28,16 +80,48 @@ const mockHandlers: MockHandler[] = [
     url: '/auth/login',
     delay: 400,
     response(body) {
-      if (!body.username) return { code: 400, message: '用户名不能为空' }
-      return { code: 0, message: 'ok', data: { token: 'mock-token-admin' } }
+      const { username, password } = body
+      if (!username) return { code: 400, message: '用户名不能为空' }
+      if (!password) return { code: 400, message: '密码不能为空' }
+
+      const expected = MOCK_PASSWORDS[username as string]
+      if (!expected || expected !== password) {
+        return { code: 401, message: '用户名或密码错误' }
+      }
+
+      const user = MOCK_USERS[username as string]
+      return { code: 0, message: 'ok', data: { token: user.token } }
     },
   },
   {
     method: 'GET',
     url: '/auth/me',
     delay: 200,
+    response(_body, req) {
+      const auth = req?.headers?.authorization as string | undefined
+      const token = auth?.replace('Bearer ', '') ?? ''
+      const user = findUserByToken(token)
+
+      if (!user) return { code: 401, message: '登录已过期，请重新登录' }
+
+      return {
+        code: 0,
+        message: 'ok',
+        data: {
+          id: user.id,
+          name: user.name,
+          roles: user.roles,
+          permissions: user.permissions,
+        },
+      }
+    },
+  },
+  {
+    method: 'POST',
+    url: '/auth/logout',
+    delay: 100,
     response() {
-      return { code: 0, message: 'ok', data: { id: '1', name: '管理员', roles: ['admin'] } }
+      return { code: 0, message: 'ok', data: null }
     },
   },
 ]
@@ -63,7 +147,7 @@ function mockPlugin(): Plugin {
           setTimeout(() => {
             let result
             try {
-              result = handler.response(body)
+              result = handler.response(body, req)
             } catch {
               result = { code: 500, message: 'Mock handler error' }
             }

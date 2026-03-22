@@ -4,16 +4,6 @@
   >
     <div class="font-600">Admin Starter</div>
     <div class="flex items-center gap-2">
-      <el-select
-        size="small"
-        style="width: 140px"
-        :model-value="currentPreset"
-        @change="onPresetChange"
-      >
-        <el-option label="管理员" value="admin" />
-        <el-option label="运营" value="ops" />
-        <el-option label="访客" value="viewer" />
-      </el-select>
       <el-dropdown trigger="click" @command="onCommand">
         <span
           class="flex items-center gap-1 cursor-pointer text-sm text-[var(--app-text)] hover:text-[var(--el-color-primary)]"
@@ -26,6 +16,9 @@
           <el-dropdown-menu>
             <el-dropdown-item disabled>
               <i class="i-carbon-user mr-1" />{{ currentUser }}
+            </el-dropdown-item>
+            <el-dropdown-item disabled>
+              <i class="i-carbon-tag mr-1" />{{ currentRole }}
             </el-dropdown-item>
             <el-dropdown-item divided command="logout">
               <i class="i-carbon-logout mr-1" />退出登录
@@ -46,31 +39,33 @@
 
 <script setup lang="ts">
 import { computed } from 'vue'
-import { useRoute, useRouter } from 'vue-router'
+import { useRouter } from 'vue-router'
 import { useAppStore } from '@/store/app'
-import { usePermissionStore, type PresetKey } from '@/store/permission'
+import { usePermissionStore } from '@/store/permission'
 import { useAuth } from '@/composables/useAuth'
+import { useTagsView } from '@/composables/useTagsView'
 
 const app = useAppStore()
 const isDark = computed(() => app.theme === 'dark')
 const onToggle = () => app.toggleTheme()
 
 const permission = usePermissionStore()
-const currentPreset = computed(() => permission.currentKey)
-const currentUser = computed(() => permission.profile.name)
+const currentUser = computed(() => permission.profile?.name ?? '未登录')
+const currentRole = computed(() => {
+  const roles = permission.profile?.roles ?? []
+  const map: Record<string, string> = { admin: '管理员', ops: '运营', viewer: '访客' }
+  return roles.map((r) => map[r] || r).join(', ')
+})
 
 const router = useRouter()
-const route = useRoute()
-const onPresetChange = (value: PresetKey) => {
-  permission.switchPreset(value)
-  const allowed = route.matched.every((r) => permission.canAccess(r.meta))
-  if (!allowed) router.replace('/403')
-}
-
 const { logout } = useAuth()
+const { removeAll } = useTagsView()
+
 const onCommand = (cmd: string) => {
   if (cmd === 'logout') {
     logout()
+    permission.resetPermission()
+    removeAll()
     router.replace('/login')
   }
 }
