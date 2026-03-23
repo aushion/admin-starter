@@ -8,20 +8,20 @@ import { fromExtent as polygonFromExtent } from 'ol/geom/Polygon'
 import VectorLayer from 'ol/layer/Vector'
 import VectorSource from 'ol/source/Vector'
 import Overlay from 'ol/Overlay'
-import { fromLonLat } from 'ol/proj'
+import { fromLonLat, toLonLat } from 'ol/proj'
 import { Fill, RegularShape, Stroke, Style } from 'ol/style'
 import { createMapEngine, provideMapEngine } from '@/composables/ol/engine/context'
 import { useOlMap } from '@/composables/ol/useOlMap'
 import { useOlHeatPoints, type HeatPoint } from '@/composables/ol/useOlHeatPoints'
 import { useOlDraw } from '@/composables/ol/useOlDraw'
 import { useOlViewport } from '@/composables/ol/useOlViewport'
+import { useDashboardChannel } from '@/composables/ol/useDashboardChannel'
 
 const engine = createMapEngine()
 provideMapEngine(engine)
 
 const mapEl = ref<HTMLElement | null>(null)
 
-const POINT_COUNT = 10000
 const HEAT_HIDE_ZOOM = 13.5
 const GRID_BASE_PIXEL = 56
 const GRID_MIN_SIZE_M = 80
@@ -39,105 +39,33 @@ const viewport = useOlViewport()
 
 // ─── 数据类型 ──────────────────────────────────
 
-type ClusterSeed = {
-  lon: number
-  lat: number
-  ratio: number
-  sigmaKm: number
-  peak: number
-}
-
 type HeatPointEx = HeatPoint & {
   x3857: number
   y3857: number
 }
 
-// ─── 聚簇种子 ──────────────────────────────────
-
-const BEIJING_CLUSTERS: ClusterSeed[] = [
-  { lon: 116.4074, lat: 39.9042, ratio: 0.18, sigmaKm: 4.8, peak: 1.0 },
-  { lon: 116.4551, lat: 39.922, ratio: 0.2, sigmaKm: 6.5, peak: 0.95 },
-  { lon: 116.297, lat: 39.9593, ratio: 0.16, sigmaKm: 6.2, peak: 0.92 },
-  { lon: 116.3339, lat: 39.7267, ratio: 0.14, sigmaKm: 5.5, peak: 0.86 },
-  { lon: 116.1767, lat: 39.7353, ratio: 0.1, sigmaKm: 7.0, peak: 0.72 },
-  { lon: 116.6535, lat: 40.1289, ratio: 0.08, sigmaKm: 7.5, peak: 0.68 },
-  { lon: 116.1076, lat: 40.2208, ratio: 0.07, sigmaKm: 8.0, peak: 0.62 },
-  { lon: 116.8434, lat: 39.9284, ratio: 0.07, sigmaKm: 8.5, peak: 0.6 },
-]
-
-// ─── 随机数据生成 ──────────────────────────────
-
-function gaussianRandom(): number {
-  let u = 0
-  let v = 0
-  while (u === 0) u = Math.random()
-  while (v === 0) v = Math.random()
-  return Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)
+function rowToHeatPointEx(row: { id: string; coord3857: [number, number] }): HeatPointEx {
+  const [x3857, y3857] = row.coord3857
+  const [lon, lat] = toLonLat([x3857, y3857]) as [number, number]
+  return { id: Number(row.id), lon, lat, x3857, y3857, weight: 0.5, clusterPeak: 1 }
 }
 
-function kmToLat(km: number) {
-  return km / 111
-}
+const { allPoints, mode, filteredPoints, highlightedIds, pendingCenter } = useDashboardChannel()
 
-function kmToLon(km: number, lat: number) {
-  return km / (111 * Math.cos((lat * Math.PI) / 180))
-}
+const basePoints = computed<HeatPointEx[]>(() => allPoints.value.map(rowToHeatPointEx))
 
-function pickCluster(): ClusterSeed {
-  const r = Math.random()
-  let acc = 0
-  for (let i = 0; i < BEIJING_CLUSTERS.length; i++) {
-    acc += (BEIJING_CLUSTERS[i] as ClusterSeed).ratio
-    if (r <= acc) return BEIJING_CLUSTERS[i] as ClusterSeed
-  }
-  return BEIJING_CLUSTERS[BEIJING_CLUSTERS.length - 1] as ClusterSeed
-}
-
-function generateBeijingRandomPoints(count: number): HeatPointEx[] {
-  const data: HeatPointEx[] = new Array(count)
-
-  for (let i = 0; i < count; i++) {
-    const c = pickCluster()
-
-    const dxKm = gaussianRandom() * c.sigmaKm
-    const dyKm = gaussianRandom() * c.sigmaKm
-
-    const lon = c.lon + kmToLon(dxKm, c.lat)
-    const lat = c.lat + kmToLat(dyKm)
-
-    const dist = Math.sqrt(dxKm * dxKm + dyKm * dyKm)
-    const decay = Math.exp(-(dist * dist) / (2 * c.sigmaKm * c.sigmaKm))
-    const localNoise = 0.15 + Math.random() * 0.25
-    const base = c.peak * decay + localNoise
-    const normalized = Math.max(0.03, Math.min(1, base))
-
-    const [x3857, y3857] = fromLonLat([lon, lat]) as [number, number]
-
-    data[i] = {
-      id: i + 1,
-      lon,
-      lat,
-      x3857,
-      y3857,
-      weight: normalized,
-      clusterPeak: c.peak,
-    }
-  }
-
-  const noiseCount = Math.floor(count * 0.06)
-  for (let i = 0; i < noiseCount; i++) {
-    const idx = Math.floor(Math.random() * count)
-    const p = data[idx] as HeatPointEx
-    p.weight = Math.max(0.02, Math.min(0.2, Math.random() * 0.18))
-  }
-
-  return data
-}
+// targetPoints respects both channel mode and draw-box selection:
+// - filter mode: show only channel-provided points (ignores draw box)
+// - normal/highlight mode: show basePoints, filtered by draw geometry if active
+const targetPoints = computed<HeatPointEx[]>(() => {
+  if (mode.value === 'filter') return filteredPoints.value.map(rowToHeatPointEx)
+  const pts = basePoints.value
+  const geom = draw.geometry.value
+  if (geom) return pts.filter((p) => geom.intersectsCoordinate([p.x3857, p.y3857]))
+  return pts
+})
 
 // ─── 业务状态 ──────────────────────────────────
-
-const basePoints = ref<HeatPointEx[]>([])
-const targetPoints = ref<HeatPointEx[]>([])
 
 const gridCellSize = ref(0)
 const gridCellCount = ref(0)
@@ -311,16 +239,9 @@ function rebuildGridHeat() {
 
 function applySelection() {
   if (!draw.geometry.value) {
-    targetPoints.value = basePoints.value.slice()
-    rebuildGridHeat()
     syncLayerByZoom()
     return
   }
-
-  const geom = draw.geometry.value
-  const filtered = basePoints.value.filter((p) => geom.intersectsCoordinate([p.x3857, p.y3857]))
-  targetPoints.value = filtered
-
   rebuildGridHeat()
   syncLayerByZoom()
 }
@@ -330,8 +251,6 @@ function clearSelection() {
   gridSource.clear(true)
   gridCellCount.value = 0
   gridCellSize.value = 0
-
-  targetPoints.value = basePoints.value.slice()
   syncLayerByZoom()
 }
 
@@ -341,16 +260,6 @@ function beginDraw(mode: 'rect' | 'polygon') {
   gridCellSize.value = 0
 
   draw.start(mode)
-}
-
-function refresh() {
-  basePoints.value = generateBeijingRandomPoints(POINT_COUNT)
-  if (draw.geometry.value) {
-    applySelection()
-    return
-  }
-  targetPoints.value = basePoints.value.slice()
-  syncLayerByZoom()
 }
 
 // ─── draw.geometry 变化时自动触发筛选 ──────────
@@ -423,7 +332,6 @@ watch(
       if (el) el.style.cursor = ''
     })
 
-    refresh()
     syncLayerByZoom()
   },
   { immediate: true },
@@ -486,7 +394,6 @@ onUnmounted(() => {
             >多边形框选</ElButton
           >
           <ElButton size="small" @click="clearSelection">清空框选</ElButton>
-          <ElButton size="small" @click="refresh">刷新 {{ POINT_COUNT }} 点</ElButton>
           <ElButton size="small" @click="applyBalancedPreset">均衡预设</ElButton>
         </div>
 
