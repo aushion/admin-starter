@@ -25,6 +25,29 @@
         <div class="bridge-log">{{ state.lastMapEvent || '等待地图消息...' }}</div>
         <div class="bridge-log">Map 最近同步状态: {{ mapMockState.latestFilters || '-' }}</div>
         <div class="bridge-log">Map 最近定位请求: {{ mapMockState.latestFocus || '-' }}</div>
+        <div class="bridge-row">
+          <el-badge :value="selectedCount" :hidden="selectedCount === 0">
+            <el-button
+              size="small"
+              type="primary"
+              :disabled="selectedCount === 0"
+              @click="onFilterSelected"
+            >
+              筛选
+            </el-button>
+          </el-badge>
+          <el-badge :value="selectedCount" :hidden="selectedCount === 0">
+            <el-button
+              size="small"
+              type="warning"
+              :disabled="selectedCount === 0"
+              @click="onHighlightSelected"
+            >
+              高亮
+            </el-button>
+          </el-badge>
+          <el-button size="small" @click="onMapClearSelection">重置</el-button>
+        </div>
       </div>
 
       <TablePane
