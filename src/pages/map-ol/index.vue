@@ -4,11 +4,12 @@ import 'ol/ol.css'
 import { unByKey } from 'ol/Observable'
 import type { EventsKey } from 'ol/events'
 import Feature from 'ol/Feature'
+import Point from 'ol/geom/Point'
 import { fromExtent as polygonFromExtent } from 'ol/geom/Polygon'
 import VectorLayer from 'ol/layer/Vector'
 import VectorSource from 'ol/source/Vector'
 import Overlay from 'ol/Overlay'
-import { fromLonLat, toLonLat } from 'ol/proj'
+import { toLonLat } from 'ol/proj'
 import { Fill, RegularShape, Stroke, Style } from 'ol/style'
 import { createMapEngine, provideMapEngine } from '@/composables/ol/engine/context'
 import { useOlMap } from '@/composables/ol/useOlMap'
@@ -73,6 +74,9 @@ const gridMaxCount = ref(1)
 
 const gridSource = new VectorSource()
 const gridLayer = shallowRef<VectorLayer<VectorSource> | null>(null)
+
+const highlightSource = new VectorSource()
+const highlightLayer = shallowRef<VectorLayer<VectorSource> | null>(null)
 
 let pointerMoveKey: EventsKey | null = null
 const popupEl = ref<HTMLElement | null>(null)
@@ -275,6 +279,36 @@ watch(viewport.zoom, () => {
   syncLayerByZoom()
 })
 
+watch(
+  [mode, highlightedIds, basePoints],
+  ([m, ids]) => {
+    if (!highlightLayer.value) return
+    if (m !== 'highlight' || ids.size === 0) {
+      highlightSource.clear(true)
+      highlightLayer.value.setVisible(false)
+      return
+    }
+    const features = basePoints.value
+      .filter((p) => ids.has(String(p.id)))
+      .map((p) => {
+        const f = new Feature({ geometry: new Point([p.x3857, p.y3857]) })
+        f.setId(p.id)
+        return f
+      })
+    highlightSource.clear(true)
+    highlightSource.addFeatures(features)
+    highlightLayer.value.setVisible(true)
+  },
+  { deep: false },
+)
+
+watch(pendingCenter, (center) => {
+  if (!center || !map.value) return
+  map.value.getView().animate({ center, zoom: 14, duration: 600 }, () => {
+    pendingCenter.value = null
+  })
+})
+
 // ─── 地图初始化后：网格图层 + Popup ──────────────
 
 watch(
@@ -302,6 +336,27 @@ watch(
       stopEvent: false,
     })
     olMap.addOverlay(popupOverlay)
+
+    const highlightStyle = new Style({
+      image: new RegularShape({
+        points: 5,
+        radius: 12,
+        radius2: 5,
+        angle: 0,
+        fill: new Fill({ color: 'rgba(255, 220, 0, 0.95)' }),
+        stroke: new Stroke({ color: 'rgba(234, 88, 12, 0.95)', width: 2 }),
+      }),
+    })
+
+    const highlightLayerInst = new VectorLayer({
+      source: highlightSource,
+      zIndex: 50,
+      visible: false,
+      style: highlightStyle,
+    })
+
+    highlightLayer.value = highlightLayerInst
+    olMap.addLayer(highlightLayerInst)
 
     pointerMoveKey = olMap.on('pointermove', (evt) => {
       if (evt.dragging) {
@@ -347,11 +402,14 @@ onUnmounted(() => {
   if (olMap) {
     if (popupOverlay) olMap.removeOverlay(popupOverlay)
     if (gridLayer.value) olMap.removeLayer(gridLayer.value)
+    if (highlightLayer.value) olMap.removeLayer(highlightLayer.value)
   }
 
   popupOverlay = null
   gridLayer.value = null
   gridSource.clear(true)
+  highlightLayer.value = null
+  highlightSource.clear(true)
 })
 </script>
 
