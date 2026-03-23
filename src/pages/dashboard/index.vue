@@ -1,6 +1,5 @@
 <template>
   <div class="dashboard-page">
-    <el-button v-context-menu="{ items: menuItems }">右键</el-button>
     <QueryPanel
       :active-tab="state.activeTab"
       :basic-model="basicFormModel"
