@@ -130,7 +130,7 @@ const mockHandlers: MockHandler[] = [
 function mockPlugin(): Plugin {
   return {
     name: 'mock-server',
-    order: 'pre',
+    enforce: 'pre',
     configureServer(server) {
       server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
         if (!req.url?.startsWith('/api/')) return next()
