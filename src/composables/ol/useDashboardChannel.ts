@@ -1,7 +1,5 @@
 import { onUnmounted, ref } from 'vue'
-import type { DualMsg } from '@/shared/protocol'
-
-const CHANNEL_NAME = 'dual-screen-ol'
+import { createDualChannel } from '@/shared/channel'
 
 type RawPoint = { id: string; coord3857: [number, number] }
 
@@ -19,10 +17,9 @@ export function useDashboardChannel() {
     pendingCenter.value = null
   }
 
-  const bc = new BroadcastChannel(CHANNEL_NAME)
+  const channel = createDualChannel()
 
-  bc.onmessage = (e: MessageEvent<DualMsg>) => {
-    const msg = e.data
+  channel.on((msg) => {
     if (msg.type === 'MAP_SYNC_ROWS') {
       allPoints.value = msg.payload.rows
       if (mode.value !== 'normal') resetToNormal()
@@ -42,13 +39,13 @@ export function useDashboardChannel() {
     if (msg.type === 'MAP_CLEAR_SELECTION') {
       resetToNormal()
     }
-  }
+  })
 
   // 通知 Dashboard 地图已就绪，触发 MAP_SYNC_ROWS 推送
-  bc.postMessage({ type: 'MAP_READY' } satisfies DualMsg)
+  channel.send({ type: 'MAP_READY' })
 
   onUnmounted(() => {
-    bc.close()
+    channel.close()
   })
 
   return { allPoints, mode, filteredPoints, highlightedIds, pendingCenter }
