@@ -1,6 +1,5 @@
 <template>
   <div class="dashboard-page">
-    <el-button v-context-menu="{ items: menuItems }">右键</el-button>
     <QueryPanel
       :active-tab="state.activeTab"
       :basic-model="basicFormModel"
@@ -26,6 +25,29 @@
         <div class="bridge-log">{{ state.lastMapEvent || '等待地图消息...' }}</div>
         <div class="bridge-log">Map 最近同步状态: {{ mapMockState.latestFilters || '-' }}</div>
         <div class="bridge-log">Map 最近定位请求: {{ mapMockState.latestFocus || '-' }}</div>
+        <div class="bridge-row">
+          <el-badge :value="selectedCount" :hidden="selectedCount === 0">
+            <el-button
+              size="small"
+              type="primary"
+              :disabled="selectedCount === 0"
+              @click="onFilterSelected"
+            >
+              筛选
+            </el-button>
+          </el-badge>
+          <el-badge :value="selectedCount" :hidden="selectedCount === 0">
+            <el-button
+              size="small"
+              type="warning"
+              :disabled="selectedCount === 0"
+              @click="onHighlightSelected"
+            >
+              高亮
+            </el-button>
+          </el-badge>
+          <el-button size="small" @click="onMapClearSelection">重置</el-button>
+        </div>
       </div>
 
       <TablePane
@@ -52,7 +74,7 @@
 </template>
 
 <script setup lang="ts">
-import { onMounted, onUnmounted, reactive, toRaw } from 'vue'
+import { computed, onMounted, onUnmounted, reactive, toRaw } from 'vue'
 import type { ProColumn } from '@/components/ProTable'
 import QueryPanel from './components/QueryPanel.vue'
 import TablePane from './components/TablePane.vue'
@@ -146,6 +168,14 @@ const state = reactive({
   basicTable: createTableState('基础查询结果表'),
   advancedTable: createTableState('扩展筛选结果表'),
 })
+
+const selectedRows = computed<DeviceRow[]>(() => {
+  const table = state.activeTab === 'basic' ? state.basicTable : state.advancedTable
+  const keySet = new Set(table.selectedKeys.map(String))
+  return table.rows.filter((r) => keySet.has(String(r.id)))
+})
+
+const selectedCount = computed(() => selectedRows.value.length)
 
 const pageChannel = createDualChannel()
 const mapMockChannel = createDualChannel()
@@ -427,17 +457,20 @@ function onTableSelectionChange(payload: {
 
   state.activeTab = payload.tab
   state.focusedId = first.id
-  pageChannel.send({
-    type: 'FOCUS',
-    payload: { id: String(first.id), coord3857: first.coord3857, zoom: 14 },
-  })
+  syncStateToMap()
 }
 
 function onPageReceiveMapMessage(msg: DualMsg) {
   if (msg.type === 'MAP_READY') {
     state.mapReady = true
-    state.lastMapEvent = '收到 MAP_READY，已下发 SYNC_STATE'
+    state.lastMapEvent = '收到 MAP_READY，已下发 SYNC_STATE + MAP_SYNC_ROWS'
     syncStateToMap()
+    pageChannel.send({
+      type: 'MAP_SYNC_ROWS',
+      payload: {
+        rows: ALL_ROWS.map((r) => ({ id: String(r.id), coord3857: r.coord3857 })),
+      },
+    })
     return
   }
 
@@ -484,6 +517,32 @@ function simulateMapSelect() {
   const activeTable = getTableState(state.activeTab)
   const target = activeTable.rows[0]?.id ?? 1
   mapMockChannel.send({ type: 'MAP_SELECT', payload: { id: String(target) } })
+}
+
+function onFilterSelected() {
+  const rows = selectedRows.value
+  if (!rows.length) return
+  const first = rows[0] as DeviceRow
+  pageChannel.send({
+    type: 'MAP_SHOW_SELECTED',
+    payload: {
+      rows: rows.map((r) => ({ id: String(r.id), coord3857: r.coord3857 })),
+      center: first.coord3857,
+    },
+  })
+}
+
+function onHighlightSelected() {
+  const rows = selectedRows.value
+  if (!rows.length) return
+  pageChannel.send({
+    type: 'MAP_HIGHLIGHT_SELECTED',
+    payload: { ids: rows.map((r) => String(r.id)) },
+  })
+}
+
+function onMapClearSelection() {
+  pageChannel.send({ type: 'MAP_CLEAR_SELECTION' })
 }
 
 onMounted(() => {

@@ -18,6 +18,6 @@ export function getMeApi() {
 
 // 下载示例：后端返回 blob
 export async function downloadReportApi() {
-  const blob = await http.get('/report/export', { responseType: 'blob' })
+  const blob = await http.get<Blob, Blob>('/report/export', { responseType: 'blob' })
   downloadBlob(blob, 'report.xlsx')
 }
