@@ -4,6 +4,7 @@ import type { IncomingMessage, ServerResponse } from 'node:http'
 import vue from '@vitejs/plugin-vue'
 import vueJsx from '@vitejs/plugin-vue-jsx'
 import UnoCSS from 'unocss/vite' // ⭐ 关键
+import legacy from '@vitejs/plugin-legacy'
 import { fileURLToPath, URL } from 'node:url'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
@@ -215,6 +216,15 @@ export default defineConfig({
     vue(),
     vueJsx(),
     UnoCSS(), // ⭐ 关键
+    legacy({
+      // 兼容目标：Chrome 90+（Chrome 105 在此范围内）
+      targets: ['chrome >= 90'],
+      // 不生成独立的 legacy bundle（无需支持 IE11），
+      // 只向现代 bundle 注入缺失 API 的 polyfill
+      renderLegacyChunks: false,
+      // 自动检测代码中用到的 API 并注入对应 core-js polyfill
+      modernPolyfills: true,
+    }),
     viteStaticCopy({
       targets: [
         { src: `${cesiumSource}/Workers`, dest: cesiumBaseUrl },

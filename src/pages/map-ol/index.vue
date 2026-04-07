@@ -461,7 +461,8 @@ onUnmounted(() => {
           <span class="ol-popup__label">纬度</span><span>{{ hoveredPoint.lat.toFixed(6) }}</span>
         </div>
         <div class="ol-popup__row">
-          <span class="ol-popup__label">权重</span><span>{{ hoveredPoint.weight.toFixed(4) }}</span>
+          <span class="ol-popup__label">权重</span
+          ><span>{{ hoveredPoint?.weight?.toFixed(4) }}</span>
         </div>
         <div class="ol-popup__row">
           <span class="ol-popup__label">聚簇峰值</span><span>{{ hoveredPoint.clusterPeak }}</span>
