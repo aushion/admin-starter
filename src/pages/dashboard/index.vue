@@ -52,6 +52,7 @@
 
       <TablePane
         :active-tab="state.activeTab"
+        :visible-tables="layoutStore.visibleTables"
         :basic-title="state.basicTable.title"
         :basic-columns="state.basicTable.columns"
         :basic-data-source="state.basicTable.rows"
@@ -64,8 +65,13 @@
         :advanced-loading="state.advancedTable.loading"
         :advanced-collapsed="state.advancedTable.collapsed"
         :advanced-selected-keys="state.advancedTable.selectedKeys"
+        :stats-title="state.statsTable.title"
+        :stats-data-source="state.statsTable.rows"
+        :stats-loading="state.statsTable.loading"
+        :stats-collapsed="state.statsTable.collapsed"
         :focused-id="state.focusedId"
         @toggle-collapse="onToggleCollapse"
+        @toggle-stats-collapse="onToggleStatsCollapse"
         @focus-map="onFocusMap"
         @selection-change="onTableSelectionChange"
       />
@@ -87,10 +93,12 @@ import type {
   QueryForm,
   QueryTabKey,
   RowStatus,
+  StatsRow,
   TabQueryPayload,
   ZoneCode,
 } from './types'
 import type { ContextMenuItem } from '@/components/ContextMenu'
+import { useDashboardLayoutStore } from '@/store/dashboardLayout'
 
 type TableState = {
   title: string
@@ -101,6 +109,15 @@ type TableState = {
   collapsed: boolean
   selectedKeys: Array<string | number>
 }
+
+type StatsTableState = {
+  title: string
+  rows: StatsRow[]
+  loading: boolean
+  collapsed: boolean
+}
+
+const layoutStore = useDashboardLayoutStore()
 
 const menuItems: ContextMenuItem[] = [
   { key: 'view', label: '查看', icon: 'i-mdi-eye' },
@@ -160,6 +177,26 @@ const advancedFormModel = reactive<AdvancedQueryForm>({
   endedAt: undefined,
 })
 
+const ZONE_LABELS: Record<ZoneCode, string> = { north: '北区', south: '南区', west: '西区' }
+
+function buildStatsRows(rows: DeviceRow[]): StatsRow[] {
+  const zones: ZoneCode[] = ['north', 'south', 'west']
+  return zones.map((zone) => {
+    const group = rows.filter((r) => r.zone === zone)
+    return {
+      id: zone,
+      zone,
+      zoneLabel: ZONE_LABELS[zone],
+      online: group.filter((r) => r.status === 'online').length,
+      offline: group.filter((r) => r.status === 'offline').length,
+      total: group.length,
+      p1: group.filter((r) => r.level === 'P1').length,
+      p2: group.filter((r) => r.level === 'P2').length,
+      p3: group.filter((r) => r.level === 'P3').length,
+    }
+  })
+}
+
 const state = reactive({
   activeTab: 'basic' as QueryTabKey,
   focusedId: undefined as number | undefined,
@@ -167,6 +204,12 @@ const state = reactive({
   lastMapEvent: '',
   basicTable: createTableState('基础查询结果表'),
   advancedTable: createTableState('扩展筛选结果表'),
+  statsTable: {
+    title: '分区统计汇总表',
+    rows: buildStatsRows(ALL_ROWS),
+    loading: false,
+    collapsed: false,
+  } as StatsTableState,
 })
 
 const selectedRows = computed<DeviceRow[]>(() => {
@@ -433,6 +476,11 @@ function onToggleCollapse(payload: { tab: QueryTabKey }) {
   syncStateToMap()
 }
 
+function onToggleStatsCollapse() {
+  if (state.statsTable.rows.length === 0) return
+  state.statsTable.collapsed = !state.statsTable.collapsed
+}
+
 function onFocusMap(payload: { tab: QueryTabKey; row: DeviceRow }) {
   state.activeTab = payload.tab
   state.focusedId = payload.row.id
@@ -568,10 +616,9 @@ onUnmounted(() => {
   display: grid;
   grid-template-columns: 420px minmax(0, 1fr);
   gap: 16px;
-  min-height: calc(100vh - 140px);
+  height: calc(100vh - 140px);
 }
 
-.right-pane,
 .bridge-panel {
   border: 1px solid var(--el-border-color-light);
   border-radius: 10px;
@@ -579,7 +626,14 @@ onUnmounted(() => {
 }
 
 .right-pane {
+  display: flex;
+  flex-direction: column;
   padding: 14px;
+  gap: 12px;
+  overflow: hidden;
+  border: 1px solid var(--el-border-color-light);
+  border-radius: 10px;
+  background: #fff;
 }
 
 .bridge-title {

@@ -1,10 +1,10 @@
 import { defineConfig } from 'vite-plus'
 import type { Plugin } from 'vite-plus'
 import type { IncomingMessage, ServerResponse } from 'node:http'
+import legacy from '@vitejs/plugin-legacy'
 import vue from '@vitejs/plugin-vue'
 import vueJsx from '@vitejs/plugin-vue-jsx'
 import UnoCSS from 'unocss/vite' // ⭐ 关键
-import legacy from '@vitejs/plugin-legacy'
 import { fileURLToPath, URL } from 'node:url'
 import { viteStaticCopy } from 'vite-plugin-static-copy'
 
@@ -127,6 +127,57 @@ const mockHandlers: MockHandler[] = [
   },
 ]
 
+// ========== SSE Mock：/api/stream/map-points ==========
+// 北京中心 3857: [12958412, 4852030]，随机散布 ±120km
+const SSE_TOTAL = 100_000
+const SSE_BATCH = 10_000
+const SSE_CENTER_X = 12_958_412
+const SSE_CENTER_Y = 4_852_030
+const SSE_RANGE = 120_000 // meters in 3857
+
+function makeBatch(start: number, size: number): string {
+  const rows: { id: string; coord3857: [number, number] }[] = []
+  for (let i = 0; i < size; i++) {
+    const idx = start + i
+    rows.push({
+      id: String(idx),
+      coord3857: [
+        SSE_CENTER_X + (Math.random() * 2 - 1) * SSE_RANGE,
+        SSE_CENTER_Y + (Math.random() * 2 - 1) * SSE_RANGE,
+      ],
+    })
+  }
+  const done = start + size >= SSE_TOTAL
+  return `data: ${JSON.stringify({ rows, total: SSE_TOTAL, done })}\n\n`
+}
+
+function handleSseStream(res: ServerResponse) {
+  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
+  res.setHeader('Cache-Control', 'no-cache')
+  res.setHeader('Connection', 'keep-alive')
+  res.setHeader('Access-Control-Allow-Origin', '*')
+  res.statusCode = 200
+
+  let sent = 0
+  const batchCount = Math.ceil(SSE_TOTAL / SSE_BATCH)
+
+  function sendNext() {
+    if (sent >= SSE_TOTAL) return
+    const size = Math.min(SSE_BATCH, SSE_TOTAL - sent)
+    res.write(makeBatch(sent, size))
+    sent += size
+    if (sent < SSE_TOTAL) {
+      setTimeout(sendNext, 300) // 每批间隔 300ms，模拟网络延迟
+    } else {
+      res.end()
+    }
+  }
+
+  // suppress unused warning
+  void batchCount
+  sendNext()
+}
+
 // ========== Vite 插件 ==========
 function mockPlugin(): Plugin {
   return {
@@ -135,6 +186,12 @@ function mockPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
         if (!req.url?.startsWith('/api/')) return next()
+
+        // SSE 流式接口单独处理
+        if (req.url === '/api/stream/map-points') {
+          handleSseStream(res)
+          return
+        }
 
         // '/api/auth/login' → '/auth/login'（保留 leading slash）
         const plainPath = req.url.replace(/^\/api/, '').split('?')[0]
@@ -217,12 +274,8 @@ export default defineConfig({
     vueJsx(),
     UnoCSS(), // ⭐ 关键
     legacy({
-      // 兼容目标：Chrome 90+（Chrome 105 在此范围内）
       targets: ['chrome >= 90'],
-      // 不生成独立的 legacy bundle（无需支持 IE11），
-      // 只向现代 bundle 注入缺失 API 的 polyfill
       renderLegacyChunks: false,
-      // 自动检测代码中用到的 API 并注入对应 core-js polyfill
       modernPolyfills: true,
     }),
     viteStaticCopy({

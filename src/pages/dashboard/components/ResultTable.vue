@@ -7,7 +7,7 @@
             :columns="virtualColumns"
             :data="dataSource"
             :width="width"
-            :height="Math.max(height, 360)"
+            :height="Math.max(height, 120)"
             :row-height="40"
             :header-height="42"
             :row-class="rowClassName"
@@ -205,10 +205,15 @@ const rowEventHandlers = {
 <style scoped>
 .result-panel {
   padding: 8px 12px 12px;
+  height: 100%;
+  box-sizing: border-box;
+  display: flex;
+  flex-direction: column;
 }
 
 .table-v2-wrap {
-  height: 440px;
+  flex: 1;
+  min-height: 0;
 }
 
 :deep(.el-table-v2__row.is-map-focused-row) {

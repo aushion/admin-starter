@@ -1,6 +1,14 @@
 <template>
   <section class="table-pane">
-    <article class="table-box" :class="{ 'is-active': activeTab === 'basic' }">
+    <!-- Basic table -->
+    <article
+      v-if="visibleTables.includes('basic')"
+      class="table-box"
+      :class="{
+        'is-active': activeTab === 'basic',
+        'is-expanded': !basicCollapsed && basicDataSource.length > 0,
+      }"
+    >
       <header class="table-box__head">
         <span>{{ basicTitle }}</span>
         <div class="table-box__head-actions">
@@ -34,7 +42,15 @@
       </div>
     </article>
 
-    <article class="table-box" :class="{ 'is-active': activeTab === 'advanced' }">
+    <!-- Advanced table -->
+    <article
+      v-if="visibleTables.includes('advanced')"
+      class="table-box"
+      :class="{
+        'is-active': activeTab === 'advanced',
+        'is-expanded': !advancedCollapsed && advancedDataSource.length > 0,
+      }"
+    >
       <header class="table-box__head">
         <span>{{ advancedTitle }}</span>
         <div class="table-box__head-actions">
@@ -67,16 +83,47 @@
         />
       </div>
     </article>
+
+    <!-- Stats table -->
+    <article
+      v-if="visibleTables.includes('stats')"
+      class="table-box"
+      :class="{ 'is-expanded': !statsCollapsed && statsDataSource.length > 0 }"
+    >
+      <header class="table-box__head">
+        <span>{{ statsTitle }}</span>
+        <div class="table-box__head-actions">
+          <el-tag size="small" type="info">{{ statsDataSource.length }} 组</el-tag>
+          <el-button
+            text
+            size="small"
+            :disabled="statsDataSource.length === 0"
+            @click="emit('toggle-stats-collapse')"
+          >
+            {{ statsDataSource.length === 0 ? '无数据' : statsCollapsed ? '展开' : '收起' }}
+          </el-button>
+        </div>
+      </header>
+      <div
+        class="table-box__body"
+        :class="{ 'is-collapsed': statsDataSource.length === 0 || statsCollapsed }"
+      >
+        <StatsTable :data-source="statsDataSource" :loading="statsLoading" />
+      </div>
+    </article>
   </section>
 </template>
 
 <script setup lang="ts">
 import type { ProColumn } from '@/components/ProTable'
 import ResultTable from './ResultTable.vue'
-import type { DeviceRow, QueryTabKey } from '../types'
+import StatsTable from './StatsTable.vue'
+import type { DeviceRow, QueryTabKey, StatsRow } from '../types'
+import type { TableKey } from '@/store/dashboardLayout'
 
 defineProps<{
   activeTab: QueryTabKey
+  visibleTables: TableKey[]
 
   basicTitle: string
   basicColumns: ProColumn<DeviceRow>[]
@@ -92,11 +139,17 @@ defineProps<{
   advancedCollapsed: boolean
   advancedSelectedKeys: Array<string | number>
 
+  statsTitle: string
+  statsDataSource: StatsRow[]
+  statsLoading: boolean
+  statsCollapsed: boolean
+
   focusedId?: number
 }>()
 
 const emit = defineEmits<{
   (e: 'toggle-collapse', payload: { tab: QueryTabKey }): void
+  (e: 'toggle-stats-collapse'): void
   (e: 'focus-map', payload: { tab: QueryTabKey; row: DeviceRow }): void
   (
     e: 'selection-change',
@@ -113,13 +166,28 @@ const emit = defineEmits<{
   display: flex;
   flex-direction: column;
   gap: 12px;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
 }
 
+/* Each visible table gets an equal share of height */
 .table-box {
   border: 1px solid var(--el-border-color-light);
   border-radius: 10px;
   background: #fff;
   overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  /* collapsed: shrink to just the header */
+  flex: 0 0 auto;
+  transition: flex 0.24s ease;
+}
+
+/* When expanded, participate in flex height sharing */
+.table-box.is-expanded {
+  flex: 1 1 0;
+  min-height: 0;
 }
 
 .table-box.is-active {
@@ -128,6 +196,7 @@ const emit = defineEmits<{
 
 .table-box__head {
   height: 42px;
+  flex-shrink: 0;
   display: flex;
   align-items: center;
   justify-content: space-between;
@@ -145,15 +214,15 @@ const emit = defineEmits<{
 }
 
 .table-box__body {
-  max-height: 1200px;
-  opacity: 1;
-  transition:
-    max-height 0.24s ease,
-    opacity 0.16s ease;
+  flex: 1;
+  min-height: 0;
+  overflow: hidden;
+  transition: opacity 0.16s ease;
 }
 
 .table-box__body.is-collapsed {
-  max-height: 0;
+  flex: 0 0 0;
   opacity: 0;
+  pointer-events: none;
 }
 </style>

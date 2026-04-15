@@ -39,3 +39,15 @@ export type TabQueryPayload = {
   tab: QueryTabKey
   values: QueryForm
 }
+
+export type StatsRow = {
+  id: string
+  zone: ZoneCode
+  zoneLabel: string
+  online: number
+  offline: number
+  total: number
+  p1: number
+  p2: number
+  p3: number
+}

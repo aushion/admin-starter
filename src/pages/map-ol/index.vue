@@ -17,6 +17,7 @@ import { useOlHeatPoints, type HeatPoint } from '@/composables/ol/useOlHeatPoint
 import { useOlDraw } from '@/composables/ol/useOlDraw'
 import { useOlViewport } from '@/composables/ol/useOlViewport'
 import { useDashboardChannel } from '@/composables/ol/useDashboardChannel'
+import { useEventSourcePoints, type RawStreamPoint } from '@/composables/ol/useEventSourcePoints'
 
 const engine = createMapEngine()
 provideMapEngine(engine)
@@ -51,19 +52,76 @@ function rowToHeatPointEx(row: { id: string; coord3857: [number, number] }): Hea
   return { id: Number(row.id), lon, lat, x3857, y3857, weight: 0.5, clusterPeak: 1 }
 }
 
-const { allPoints, mode, filteredPoints, highlightedIds, pendingCenter } = useDashboardChannel()
+// ─── 频道（高亮 / 筛选 / 清除，不再负责初始数据加载）──
 
-const basePoints = computed<HeatPointEx[]>(() => allPoints.value.map(rowToHeatPointEx))
+const { mode, filteredPoints, highlightedIds, pendingCenter } = useDashboardChannel()
 
-// targetPoints respects both channel mode and draw-box selection:
-// - filter mode: show only channel-provided points (ignores draw box)
-// - normal/highlight mode: show basePoints, filtered by draw geometry if active
-const targetPoints = computed<HeatPointEx[]>(() => {
+/**
+ * 全量原始点的本地存储（非响应式数组，避免 100k 点触发 Vue 追踪开销）。
+ * 仅在 draw-selection 筛选时被同步读取。
+ */
+const rawPointsStore: HeatPointEx[] = []
+
+// ─── EventSource 流式加载 ──────────────────────
+
+/** 是否已完成首次加载 */
+const isLoaded = ref(false)
+/** 流式加载进度 0~1（仅后端声明 total 时精确） */
+const streamProgress = ref(0)
+/** 已接收点数 */
+const streamReceived = ref(0)
+/** 后端声明的总点数（0 = 未知） */
+const streamTotal = ref(0)
+/** 流式加载错误 */
+const streamError = ref('')
+
+const eventSource = useEventSourcePoints({
+  onBatch(batch: RawStreamPoint[], done: boolean, totalReceived: number) {
+    // 转换坐标并暂存（用于后续 draw-selection 筛选）
+    const converted = batch.map(rowToHeatPointEx)
+    rawPointsStore.push(...converted)
+
+    // 直接追加到热力 source，不触发 computed 链，不清空重建
+    heat.addBatch(converted)
+
+    streamReceived.value = totalReceived
+    if (streamTotal.value > 0) {
+      streamProgress.value = Math.min(1, totalReceived / streamTotal.value)
+    }
+
+    if (done) {
+      isLoaded.value = true
+      streamProgress.value = 1
+    }
+  },
+  onError() {
+    streamError.value = '数据流连接失败，请刷新重试'
+  },
+  onDone(total) {
+    streamReceived.value = total
+    streamProgress.value = 1
+    isLoaded.value = true
+  },
+})
+
+// EventSource 返回的 total 字段更新
+watch(eventSource.expectedTotal, (v) => {
+  if (v > 0) streamTotal.value = v
+})
+
+// ─── 框选筛选点集（用于 grid-heat 和 highlight）──
+
+/**
+ * 当前可见目标点：
+ * - filter 模式：后端下发的筛选结果
+ * - 有 draw 框选：从本地存储中做空间过滤
+ * - 否则：空（主热力图已直接注入 source，无需 computed 反映）
+ */
+const selectionPoints = computed<HeatPointEx[]>(() => {
   if (mode.value === 'filter') return filteredPoints.value.map(rowToHeatPointEx)
-  const pts = basePoints.value
   const geom = draw.geometry.value
-  if (geom) return pts.filter((p) => geom.intersectsCoordinate([p.x3857, p.y3857]))
-  return pts
+  if (geom) return rawPointsStore.filter((p) => geom.intersectsCoordinate([p.x3857, p.y3857]))
+  return []
 })
 
 // ─── 业务状态 ──────────────────────────────────
@@ -84,32 +142,39 @@ let popupOverlay: Overlay | null = null
 const hoveredPoint = ref<HeatPointEx | null>(null)
 
 const hasSelection = computed(() => !!draw.geometry.value)
-const selectedPointCount = computed(() => targetPoints.value.length)
+const selectedPointCount = computed(() => selectionPoints.value.length)
 const gridHeatVisible = computed(() => hasSelection.value && viewport.zoom.value < HEAT_HIDE_ZOOM)
 
 // ─── 热力图 ──────────────────────────────────
 
-const pointStyle = new Style({
-  image: new RegularShape({
-    points: 5,
-    radius: 7,
-    radius2: 3,
-    angle: 0,
-    fill: new Fill({ color: 'rgba(239, 68, 68, 0.95)' }),
-    stroke: new Stroke({ color: 'rgba(127, 29, 29, 0.95)', width: 1.2 }),
-  }),
-})
-
+/**
+ * 不传 `points` 选项：由 EventSource 直接调用 heat.addBatch() 管理数据，
+ * 避免 computed → watch → setPoints 的全量重建路径。
+ */
 const heat = useOlHeatPoints({
-  points: targetPoints,
   showHeat: true,
   showPoint: false,
   radius: 14,
   blur: 22,
-  pointStyle,
   gradient: ['#1d4ed8', '#0ea5e9', '#22c55e', '#fde047', '#f97316', '#dc2626'],
   weightFn: (p) => Math.max(0.01, Math.min(1, Number(p.weight ?? 0.1))),
 })
+
+// filter 模式下切换热力 source 内容（后端下发子集，全量清空重建，子集较小）
+watch(
+  [mode, filteredPoints],
+  ([m]) => {
+    if (m === 'filter') {
+      heat.clearAll()
+      heat.addBatch(filteredPoints.value.map(rowToHeatPointEx))
+    } else if (m === 'normal' && rawPointsStore.length > 0) {
+      // 恢复全量（分块追加）
+      heat.clearAll()
+      heat.addBatch(rawPointsStore)
+    }
+  },
+  { deep: false },
+)
 
 const radiusModel = computed<number>({
   get: () => heat.radius.value,
@@ -180,7 +245,7 @@ function rebuildGridHeat() {
   const geom = draw.geometry.value
   if (!geom) return
   if (viewport.zoom.value >= HEAT_HIDE_ZOOM) return
-  if (targetPoints.value.length === 0) return
+  if (selectionPoints.value.length === 0) return
 
   const [minX, minY, maxX, maxY] = geom.getExtent() as [number, number, number, number]
   const cellSize = Math.max(
@@ -194,8 +259,8 @@ function rebuildGridHeat() {
 
   const counter = new Map<string, number>()
 
-  for (let i = 0; i < targetPoints.value.length; i++) {
-    const p = targetPoints.value[i] as HeatPointEx
+  for (let i = 0; i < selectionPoints.value.length; i++) {
+    const p = selectionPoints.value[i] as HeatPointEx
     const x = p.x3857
     const y = p.y3857
 
@@ -280,7 +345,7 @@ watch(viewport.zoom, () => {
 })
 
 watch(
-  [mode, highlightedIds, basePoints],
+  [mode, highlightedIds],
   ([m, ids]) => {
     if (!highlightLayer.value) return
     if (m !== 'highlight' || ids.size === 0) {
@@ -288,7 +353,7 @@ watch(
       highlightLayer.value.setVisible(false)
       return
     }
-    const features = basePoints.value
+    const features = rawPointsStore
       .filter((p) => ids.has(String(p.id)))
       .map((p) => {
         const f = new Feature({ geometry: new Point([p.x3857, p.y3857]) })
@@ -388,6 +453,9 @@ watch(
     })
 
     syncLayerByZoom()
+
+    // 地图就绪后立即开始 EventSource 流式加载
+    eventSource.connect('/api/stream/map-points')
   },
   { immediate: true },
 )
@@ -417,6 +485,34 @@ onUnmounted(() => {
   <div class="relative h-screen w-full overflow-hidden">
     <div ref="mapEl" class="h-full w-full"></div>
 
+    <!-- 流式加载进度条 -->
+    <Transition name="stream-bar">
+      <div
+        v-if="!isLoaded"
+        class="pointer-events-none absolute inset-x-0 top-0 z-50 flex flex-col items-center"
+      >
+        <!-- 顶部进度条 -->
+        <div class="h-1 w-full bg-slate-200/60">
+          <div
+            class="h-full bg-blue-500 transition-[width] duration-300 ease-out"
+            :style="{ width: streamTotal > 0 ? `${streamProgress * 100}%` : '0%' }"
+          ></div>
+        </div>
+        <!-- 状态提示 -->
+        <div
+          class="mt-2 rounded-full bg-white/90 px-4 py-1.5 text-xs font-medium text-slate-700 shadow-md backdrop-blur-sm"
+        >
+          <span v-if="streamError" class="text-red-500">{{ streamError }}</span>
+          <span v-else-if="streamTotal > 0">
+            正在加载点位数据… {{ streamReceived.toLocaleString() }} /
+            {{ streamTotal.toLocaleString() }}
+            （{{ Math.round(streamProgress * 100) }}%）
+          </span>
+          <span v-else> 正在接收数据… {{ streamReceived.toLocaleString() }} 个点 </span>
+        </div>
+      </div>
+    </Transition>
+
     <div ref="popupEl" class="ol-popup" :class="{ 'ol-popup--visible': hoveredPoint }">
       <template v-if="hoveredPoint">
         <div class="ol-popup__title">ID: {{ hoveredPoint.id }}</div>
@@ -442,16 +538,32 @@ onUnmounted(() => {
       >
         <div class="flex items-center justify-between gap-3">
           <div class="text-sm font-semibold text-slate-700">选区网格热力控制台</div>
-          <ElTag size="small" :type="gridHeatVisible ? 'success' : 'info'">
-            {{ gridHeatVisible ? '网格热力显示中' : '点位模式' }}
-          </ElTag>
+          <div class="flex items-center gap-2">
+            <ElTag v-if="!isLoaded" size="small" type="warning">
+              加载中 {{ streamReceived.toLocaleString() }}
+            </ElTag>
+            <ElTag v-else size="small" type="success">
+              {{ streamReceived.toLocaleString() }} 个点
+            </ElTag>
+            <ElTag size="small" :type="gridHeatVisible ? 'success' : 'info'">
+              {{ gridHeatVisible ? '网格热力显示中' : '点位模式' }}
+            </ElTag>
+          </div>
         </div>
 
         <div class="mt-3 flex flex-wrap items-center gap-2">
-          <ElButton type="primary" size="small" @click="beginDraw('rect')">矩形框选</ElButton>
-          <ElButton type="primary" plain size="small" @click="beginDraw('polygon')"
-            >多边形框选</ElButton
+          <ElButton type="primary" size="small" :disabled="!isLoaded" @click="beginDraw('rect')">
+            矩形框选
+          </ElButton>
+          <ElButton
+            type="primary"
+            plain
+            size="small"
+            :disabled="!isLoaded"
+            @click="beginDraw('polygon')"
           >
+            多边形框选
+          </ElButton>
           <ElButton size="small" @click="clearSelection">清空框选</ElButton>
           <ElButton size="small" @click="applyBalancedPreset">均衡预设</ElButton>
         </div>
@@ -535,5 +647,14 @@ onUnmounted(() => {
 
 .ol-popup__label {
   color: #94a3b8;
+}
+
+.stream-bar-enter-active,
+.stream-bar-leave-active {
+  transition: opacity 0.4s ease;
+}
+.stream-bar-enter-from,
+.stream-bar-leave-to {
+  opacity: 0;
 }
 </style>
