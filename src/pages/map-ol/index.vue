@@ -1,38 +1,34 @@
 <script setup lang="ts">
-import { computed, onUnmounted, ref, shallowRef, watch } from 'vue'
+import { computed, ref, watch } from 'vue'
 import 'ol/ol.css'
 import { unByKey } from 'ol/Observable'
-import type { EventsKey } from 'ol/events'
 import Feature from 'ol/Feature'
-import Point from 'ol/geom/Point'
-import { fromExtent as polygonFromExtent } from 'ol/geom/Polygon'
-import VectorLayer from 'ol/layer/Vector'
-import VectorSource from 'ol/source/Vector'
-import Overlay from 'ol/Overlay'
 import { toLonLat } from 'ol/proj'
-import { Fill, RegularShape, Stroke, Style } from 'ol/style'
 import { createMapEngine, provideMapEngine } from '@/composables/ol/engine/context'
+import { onMapReady } from '@/composables/ol/engine/utils'
 import { useOlMap } from '@/composables/ol/useOlMap'
 import { useOlHeatPoints, type HeatPoint } from '@/composables/ol/useOlHeatPoints'
 import { useOlDraw } from '@/composables/ol/useOlDraw'
 import { useOlViewport } from '@/composables/ol/useOlViewport'
 import { useDashboardChannel } from '@/composables/ol/useDashboardChannel'
 import { useEventSourcePoints, type RawStreamPoint } from '@/composables/ol/useEventSourcePoints'
+import { useOlGridLayer } from '@/composables/ol/useOlGridLayer'
+import { useOlBackendGridLayer } from '@/composables/ol/useOlBackendGridLayer'
+import { useOlHighlightLayer } from '@/composables/ol/useOlHighlightLayer'
+import { useOlPointPopup } from '@/composables/ol/useOlPointPopup'
 
 const engine = createMapEngine()
 provideMapEngine(engine)
 
 const mapEl = ref<HTMLElement | null>(null)
+const popupEl = ref<HTMLElement | null>(null)
 
 const HEAT_HIDE_ZOOM = 13.5
-const GRID_BASE_PIXEL = 56
-const GRID_MIN_SIZE_M = 80
-const GRID_MAX_SIZE_M = 2600
 
 const { map } = useOlMap(mapEl, {
   view: {
     zoom: 10,
-    center: [12958412, 4852030], // 北京
+    center: [12958412, 4852030],
   },
 })
 
@@ -52,43 +48,32 @@ function rowToHeatPointEx(row: { id: string; coord3857: [number, number] }): Hea
   return { id: Number(row.id), lon, lat, x3857, y3857, weight: 0.5, clusterPeak: 1 }
 }
 
-// ─── 频道（高亮 / 筛选 / 清除，不再负责初始数据加载）──
+// ─── 频道（高亮 / 筛选 / 清除）──────────────────
 
 const { mode, filteredPoints, highlightedIds, pendingCenter } = useDashboardChannel()
 
 /**
- * 全量原始点的本地存储（非响应式数组，避免 100k 点触发 Vue 追踪开销）。
+ * 全量原始点本地存储（非响应式，避免 100k 点触发 Vue 追踪开销）。
  * 仅在 draw-selection 筛选时被同步读取。
  */
 const rawPointsStore: HeatPointEx[] = []
 
 // ─── EventSource 流式加载 ──────────────────────
 
-/** 是否已完成首次加载 */
 const isLoaded = ref(false)
-/** 流式加载进度 0~1（仅后端声明 total 时精确） */
+const isStarted = ref(false)
 const streamProgress = ref(0)
-/** 已接收点数 */
 const streamReceived = ref(0)
-/** 后端声明的总点数（0 = 未知） */
 const streamTotal = ref(0)
-/** 流式加载错误 */
 const streamError = ref('')
 
 const eventSource = useEventSourcePoints({
   onBatch(batch: RawStreamPoint[], done: boolean, totalReceived: number) {
-    // 转换坐标并暂存（用于后续 draw-selection 筛选）
     const converted = batch.map(rowToHeatPointEx)
     rawPointsStore.push(...converted)
-
-    // 直接追加到热力 source，不触发 computed 链，不清空重建
     heat.addBatch(converted)
-
     streamReceived.value = totalReceived
-    if (streamTotal.value > 0) {
-      streamProgress.value = Math.min(1, totalReceived / streamTotal.value)
-    }
-
+    if (streamTotal.value > 0) streamProgress.value = Math.min(1, totalReceived / streamTotal.value)
     if (done) {
       isLoaded.value = true
       streamProgress.value = 1
@@ -104,19 +89,12 @@ const eventSource = useEventSourcePoints({
   },
 })
 
-// EventSource 返回的 total 字段更新
 watch(eventSource.expectedTotal, (v) => {
   if (v > 0) streamTotal.value = v
 })
 
-// ─── 框选筛选点集（用于 grid-heat 和 highlight）──
+// ─── 框选筛选点集 ──────────────────────────────
 
-/**
- * 当前可见目标点：
- * - filter 模式：后端下发的筛选结果
- * - 有 draw 框选：从本地存储中做空间过滤
- * - 否则：空（主热力图已直接注入 source，无需 computed 反映）
- */
 const selectionPoints = computed<HeatPointEx[]>(() => {
   if (mode.value === 'filter') return filteredPoints.value.map(rowToHeatPointEx)
   const geom = draw.geometry.value
@@ -124,33 +102,8 @@ const selectionPoints = computed<HeatPointEx[]>(() => {
   return []
 })
 
-// ─── 业务状态 ──────────────────────────────────
-
-const gridCellSize = ref(0)
-const gridCellCount = ref(0)
-const gridMaxCount = ref(1)
-
-const gridSource = new VectorSource()
-const gridLayer = shallowRef<VectorLayer<VectorSource> | null>(null)
-
-const highlightSource = new VectorSource()
-const highlightLayer = shallowRef<VectorLayer<VectorSource> | null>(null)
-
-let pointerMoveKey: EventsKey | null = null
-const popupEl = ref<HTMLElement | null>(null)
-let popupOverlay: Overlay | null = null
-const hoveredPoint = ref<HeatPointEx | null>(null)
-
-const hasSelection = computed(() => !!draw.geometry.value)
-const selectedPointCount = computed(() => selectionPoints.value.length)
-const gridHeatVisible = computed(() => hasSelection.value && viewport.zoom.value < HEAT_HIDE_ZOOM)
-
 // ─── 热力图 ──────────────────────────────────
 
-/**
- * 不传 `points` 选项：由 EventSource 直接调用 heat.addBatch() 管理数据，
- * 避免 computed → watch → setPoints 的全量重建路径。
- */
 const heat = useOlHeatPoints({
   showHeat: true,
   showPoint: false,
@@ -160,7 +113,6 @@ const heat = useOlHeatPoints({
   weightFn: (p) => Math.max(0.01, Math.min(1, Number(p.weight ?? 0.1))),
 })
 
-// filter 模式下切换热力 source 内容（后端下发子集，全量清空重建，子集较小）
 watch(
   [mode, filteredPoints],
   ([m]) => {
@@ -168,7 +120,6 @@ watch(
       heat.clearAll()
       heat.addBatch(filteredPoints.value.map(rowToHeatPointEx))
     } else if (m === 'normal' && rawPointsStore.length > 0) {
-      // 恢复全量（分块追加）
       heat.clearAll()
       heat.addBatch(rawPointsStore)
     }
@@ -195,177 +146,92 @@ function applyBalancedPreset() {
   blurModel.value = 22
 }
 
-// ─── 网格热力 ──────────────────────────────────
+// ─── 图层组合 ──────────────────────────────────
 
-function gridFillColorByRatio(r: number) {
-  const ratio = Math.max(0, Math.min(1, r))
-  if (ratio >= 0.9) return 'rgba(127, 29, 29, 0.62)'
-  if (ratio >= 0.75) return 'rgba(185, 28, 28, 0.56)'
-  if (ratio >= 0.55) return 'rgba(249, 115, 22, 0.52)'
-  if (ratio >= 0.35) return 'rgba(245, 158, 11, 0.46)'
-  if (ratio >= 0.2) return 'rgba(34, 197, 94, 0.42)'
-  return 'rgba(14, 165, 233, 0.36)'
-}
+const grid = useOlGridLayer(
+  draw.geometry,
+  viewport.zoom,
+  viewport.resolution,
+  () => selectionPoints.value,
+)
 
-const gridStyleCache = new Map<number, Style>()
+const backendGrid = useOlBackendGridLayer({
+  fetchGrids: async (_extent) => {
+    // TODO: replace with real API call
+    // const [lonMin, latMin] = toLonLat([_extent[0], _extent[1]])
+    // const [lonMax, latMax] = toLonLat([_extent[2], _extent[3]])
+    // return fetch(`/api/grids?...`).then(r => r.json())
+    return [
+      { longitudeMin: 116.0, longitudeMax: 116.5, latitudeMin: 39.7, latitudeMax: 40.0, id: 'g1' },
+      { longitudeMin: 116.5, longitudeMax: 117.0, latitudeMin: 39.7, latitudeMax: 40.0, id: 'g2' },
+      { longitudeMin: 116.0, longitudeMax: 116.5, latitudeMin: 40.0, latitudeMax: 40.3, id: 'g3' },
+      { longitudeMin: 116.5, longitudeMax: 117.0, latitudeMin: 40.0, latitudeMax: 40.3, id: 'g4' },
+    ]
+  },
+})
 
-function getGridStyleByCount(count: number) {
-  const max = Math.max(1, gridMaxCount.value)
-  const ratio = count / max
-  const bucket = Math.max(1, Math.round(ratio * 20))
+useOlHighlightLayer(mode, highlightedIds, () => rawPointsStore)
 
-  if (gridStyleCache.has(bucket)) return gridStyleCache.get(bucket) as Style
+const popup = useOlPointPopup<HeatPointEx>(popupEl)
 
-  const style = new Style({
-    fill: new Fill({ color: gridFillColorByRatio(bucket / 20) }),
-    stroke: new Stroke({ color: 'rgba(30, 41, 59, 0.28)', width: 0.8 }),
-  })
+// ─── 派生状态 ──────────────────────────────────
 
-  gridStyleCache.set(bucket, style)
-  return style
-}
+const hasSelection = computed(() => !!draw.geometry.value)
+const selectedPointCount = computed(() => selectionPoints.value.length)
+const gridHeatVisible = computed(() => hasSelection.value && viewport.zoom.value < HEAT_HIDE_ZOOM)
+
+// ─── 框选控制 ──────────────────────────────────
+
+const isBoxSelecting = ref(false)
 
 function syncLayerByZoom() {
   const hideHeat = viewport.zoom.value >= HEAT_HIDE_ZOOM
   heat.showHeat.value = !hideHeat
   heat.showPoint.value = hideHeat
-
-  if (gridLayer.value) {
-    const visible = hasSelection.value && !hideHeat && gridCellCount.value > 0
-    gridLayer.value.setVisible(visible)
-  }
+  grid.syncVisible(hasSelection.value)
 }
-
-function rebuildGridHeat() {
-  gridSource.clear(true)
-  gridCellCount.value = 0
-  gridMaxCount.value = 1
-  gridStyleCache.clear()
-
-  const geom = draw.geometry.value
-  if (!geom) return
-  if (viewport.zoom.value >= HEAT_HIDE_ZOOM) return
-  if (selectionPoints.value.length === 0) return
-
-  const [minX, minY, maxX, maxY] = geom.getExtent() as [number, number, number, number]
-  const cellSize = Math.max(
-    GRID_MIN_SIZE_M,
-    Math.min(GRID_MAX_SIZE_M, viewport.resolution.value * GRID_BASE_PIXEL),
-  )
-  gridCellSize.value = Math.round(cellSize)
-
-  const cols = Math.max(1, Math.ceil((maxX - minX) / cellSize))
-  const rows = Math.max(1, Math.ceil((maxY - minY) / cellSize))
-
-  const counter = new Map<string, number>()
-
-  for (let i = 0; i < selectionPoints.value.length; i++) {
-    const p = selectionPoints.value[i] as HeatPointEx
-    const x = p.x3857
-    const y = p.y3857
-
-    if (x < minX || x > maxX || y < minY || y > maxY) continue
-
-    const col = Math.min(cols - 1, Math.max(0, Math.floor((x - minX) / cellSize)))
-    const row = Math.min(rows - 1, Math.max(0, Math.floor((y - minY) / cellSize)))
-    const key = `${col}_${row}`
-
-    counter.set(key, (counter.get(key) || 0) + 1)
-  }
-
-  if (counter.size === 0) return
-
-  let maxCount = 1
-  const features: Feature[] = []
-
-  for (const [key, count] of counter.entries()) {
-    if (count > maxCount) maxCount = count
-
-    const [colRaw, rowRaw] = key.split('_')
-    const col = Number(colRaw)
-    const row = Number(rowRaw)
-
-    const x1 = minX + col * cellSize
-    const y1 = minY + row * cellSize
-    const x2 = Math.min(maxX, x1 + cellSize)
-    const y2 = Math.min(maxY, y1 + cellSize)
-
-    const cellExtent: [number, number, number, number] = [x1, y1, x2, y2]
-    if (!geom.intersectsExtent(cellExtent)) continue
-
-    const feature = new Feature(polygonFromExtent(cellExtent))
-    feature.set('count', count)
-    features.push(feature)
-  }
-
-  gridMaxCount.value = Math.max(1, maxCount)
-  gridCellCount.value = features.length
-
-  if (features.length) gridSource.addFeatures(features)
-}
-
-// ─── 框选联动 ──────────────────────────────────
 
 function applySelection() {
   if (!draw.geometry.value) {
     syncLayerByZoom()
     return
   }
-  rebuildGridHeat()
+  grid.rebuild()
   syncLayerByZoom()
+}
+
+function beginDraw(drawMode: 'rect' | 'polygon') {
+  grid.clear()
+  draw.start(drawMode)
 }
 
 function clearSelection() {
   draw.clear()
-  gridSource.clear(true)
-  gridCellCount.value = 0
-  gridCellSize.value = 0
+  grid.clear()
+  backendGrid.clear()
   syncLayerByZoom()
 }
 
-function beginDraw(mode: 'rect' | 'polygon') {
-  gridSource.clear(true)
-  gridCellCount.value = 0
-  gridCellSize.value = 0
-
-  draw.start(mode)
+function beginBoxSelection() {
+  backendGrid.clear()
+  isBoxSelecting.value = true
+  beginDraw('rect')
 }
 
-// ─── draw.geometry 变化时自动触发筛选 ──────────
-
-watch(draw.geometry, (geom) => {
-  if (geom) applySelection()
+watch(draw.geometry, async (geom) => {
+  if (!geom) return
+  if (isBoxSelecting.value) {
+    isBoxSelecting.value = false
+    await backendGrid.query(geom.getExtent() as [number, number, number, number])
+  } else {
+    applySelection()
+  }
 })
-
-// ─── viewport 变化时联动图层和网格 ──────────────
 
 watch(viewport.zoom, () => {
-  if (draw.geometry.value) rebuildGridHeat()
+  if (draw.geometry.value) grid.rebuild()
   syncLayerByZoom()
 })
-
-watch(
-  [mode, highlightedIds],
-  ([m, ids]) => {
-    if (!highlightLayer.value) return
-    if (m !== 'highlight' || ids.size === 0) {
-      highlightSource.clear(true)
-      highlightLayer.value.setVisible(false)
-      return
-    }
-    const features = rawPointsStore
-      .filter((p) => ids.has(String(p.id)))
-      .map((p) => {
-        const f = new Feature({ geometry: new Point([p.x3857, p.y3857]) })
-        f.setId(p.id)
-        return f
-      })
-    highlightSource.clear(true)
-    highlightSource.addFeatures(features)
-    highlightLayer.value.setVisible(true)
-  },
-  { deep: false },
-)
 
 watch(pendingCenter, (center) => {
   if (!center || !map.value) return
@@ -374,110 +240,44 @@ watch(pendingCenter, (center) => {
   })
 })
 
-// ─── 地图初始化后：网格图层 + Popup ──────────────
+// ─── 手动加载点位数据 ──────────────────────────
 
-watch(
-  map,
-  (olMap) => {
-    if (!olMap || gridLayer.value) return
+function loadPoints() {
+  if (isStarted.value) return
+  isStarted.value = true
+  eventSource.connect('/api/stream/map-points')
+}
 
-    const gridLayerInst = new VectorLayer({
-      source: gridSource,
-      zIndex: 34,
-      visible: false,
-      style: (feature) => {
-        const count = Number(feature.get('count') || 0)
-        return getGridStyleByCount(count)
-      },
+// ─── 地图就绪：Hover 交互 ──────────────────────
+
+onMapReady(engine.map, (olMap) => {
+  const key = olMap.on('pointermove', (evt) => {
+    if (evt.dragging) {
+      popup.hide()
+      return
+    }
+
+    const feature = olMap.forEachFeatureAtPixel(evt.pixel, (f) => f, {
+      layerFilter: (l) => l === heat.pointLayer.value,
+      hitTolerance: 4,
     })
 
-    gridLayer.value = gridLayerInst
-    olMap.addLayer(gridLayerInst)
-
-    popupOverlay = new Overlay({
-      element: popupEl.value!,
-      positioning: 'bottom-center',
-      offset: [0, -12],
-      stopEvent: false,
-    })
-    olMap.addOverlay(popupOverlay)
-
-    const highlightStyle = new Style({
-      image: new RegularShape({
-        points: 5,
-        radius: 12,
-        radius2: 5,
-        angle: 0,
-        fill: new Fill({ color: 'rgba(255, 220, 0, 0.95)' }),
-        stroke: new Stroke({ color: 'rgba(234, 88, 12, 0.95)', width: 2 }),
-      }),
-    })
-
-    const highlightLayerInst = new VectorLayer({
-      source: highlightSource,
-      zIndex: 50,
-      visible: false,
-      style: highlightStyle,
-    })
-
-    highlightLayer.value = highlightLayerInst
-    olMap.addLayer(highlightLayerInst)
-
-    pointerMoveKey = olMap.on('pointermove', (evt) => {
-      if (evt.dragging) {
-        hoveredPoint.value = null
-        popupOverlay?.setPosition(undefined)
+    if (feature) {
+      const data = (feature as Feature).get('data') as HeatPointEx | undefined
+      if (data) {
+        popup.show(data, evt.coordinate)
+        olMap.getTargetElement().style.cursor = 'pointer'
         return
       }
+    }
 
-      const feature = olMap.forEachFeatureAtPixel(evt.pixel, (f) => f, {
-        layerFilter: (l) => l === heat.pointLayer.value,
-        hitTolerance: 4,
-      })
+    popup.hide()
+    olMap.getTargetElement().style.cursor = ''
+  })
 
-      if (feature) {
-        const data = (feature as Feature).get('data') as HeatPointEx | undefined
-        if (data) {
-          hoveredPoint.value = data
-          popupOverlay?.setPosition(evt.coordinate)
-          const el = olMap.getTargetElement()
-          if (el) el.style.cursor = 'pointer'
-          return
-        }
-      }
+  syncLayerByZoom()
 
-      hoveredPoint.value = null
-      popupOverlay?.setPosition(undefined)
-      const el = olMap.getTargetElement()
-      if (el) el.style.cursor = ''
-    })
-
-    syncLayerByZoom()
-
-    // 地图就绪后立即开始 EventSource 流式加载
-    eventSource.connect('/api/stream/map-points')
-  },
-  { immediate: true },
-)
-
-onUnmounted(() => {
-  if (pointerMoveKey) {
-    unByKey(pointerMoveKey)
-    pointerMoveKey = null
-  }
-
-  const olMap = map.value
-  if (olMap) {
-    if (popupOverlay) olMap.removeOverlay(popupOverlay)
-    if (gridLayer.value) olMap.removeLayer(gridLayer.value)
-    if (highlightLayer.value) olMap.removeLayer(highlightLayer.value)
-  }
-
-  popupOverlay = null
-  gridLayer.value = null
-  gridSource.clear(true)
-  highlightLayer.value = null
-  highlightSource.clear(true)
+  return () => unByKey(key)
 })
 </script>
 
@@ -488,17 +288,15 @@ onUnmounted(() => {
     <!-- 流式加载进度条 -->
     <Transition name="stream-bar">
       <div
-        v-if="!isLoaded"
+        v-if="isStarted && !isLoaded"
         class="pointer-events-none absolute inset-x-0 top-0 z-50 flex flex-col items-center"
       >
-        <!-- 顶部进度条 -->
         <div class="h-1 w-full bg-slate-200/60">
           <div
             class="h-full bg-blue-500 transition-[width] duration-300 ease-out"
             :style="{ width: streamTotal > 0 ? `${streamProgress * 100}%` : '0%' }"
           ></div>
         </div>
-        <!-- 状态提示 -->
         <div
           class="mt-2 rounded-full bg-white/90 px-4 py-1.5 text-xs font-medium text-slate-700 shadow-md backdrop-blur-sm"
         >
@@ -508,26 +306,29 @@ onUnmounted(() => {
             {{ streamTotal.toLocaleString() }}
             （{{ Math.round(streamProgress * 100) }}%）
           </span>
-          <span v-else> 正在接收数据… {{ streamReceived.toLocaleString() }} 个点 </span>
+          <span v-else>正在接收数据… {{ streamReceived.toLocaleString() }} 个点</span>
         </div>
       </div>
     </Transition>
 
-    <div ref="popupEl" class="ol-popup" :class="{ 'ol-popup--visible': hoveredPoint }">
-      <template v-if="hoveredPoint">
-        <div class="ol-popup__title">ID: {{ hoveredPoint.id }}</div>
+    <div ref="popupEl" class="ol-popup" :class="{ 'ol-popup--visible': popup.hovered.value }">
+      <template v-if="popup.hovered.value">
+        <div class="ol-popup__title">ID: {{ popup.hovered.value.id }}</div>
         <div class="ol-popup__row">
-          <span class="ol-popup__label">经度</span><span>{{ hoveredPoint.lon.toFixed(6) }}</span>
+          <span class="ol-popup__label">经度</span>
+          <span>{{ popup.hovered.value.lon.toFixed(6) }}</span>
         </div>
         <div class="ol-popup__row">
-          <span class="ol-popup__label">纬度</span><span>{{ hoveredPoint.lat.toFixed(6) }}</span>
+          <span class="ol-popup__label">纬度</span>
+          <span>{{ popup.hovered.value.lat.toFixed(6) }}</span>
         </div>
         <div class="ol-popup__row">
-          <span class="ol-popup__label">权重</span
-          ><span>{{ (hoveredPoint.weight ?? 0).toFixed(4) }}</span>
+          <span class="ol-popup__label">权重</span>
+          <span>{{ (popup.hovered.value.weight ?? 0).toFixed(4) }}</span>
         </div>
         <div class="ol-popup__row">
-          <span class="ol-popup__label">聚簇峰值</span><span>{{ hoveredPoint.clusterPeak }}</span>
+          <span class="ol-popup__label">聚簇峰值</span>
+          <span>{{ popup.hovered.value.clusterPeak }}</span>
         </div>
       </template>
     </div>
@@ -539,7 +340,8 @@ onUnmounted(() => {
         <div class="flex items-center justify-between gap-3">
           <div class="text-sm font-semibold text-slate-700">选区网格热力控制台</div>
           <div class="flex items-center gap-2">
-            <ElTag v-if="!isLoaded" size="small" type="warning">
+            <ElTag v-if="!isStarted" size="small" type="info">未加载</ElTag>
+            <ElTag v-else-if="!isLoaded" size="small" type="warning">
               加载中 {{ streamReceived.toLocaleString() }}
             </ElTag>
             <ElTag v-else size="small" type="success">
@@ -548,10 +350,22 @@ onUnmounted(() => {
             <ElTag size="small" :type="gridHeatVisible ? 'success' : 'info'">
               {{ gridHeatVisible ? '网格热力显示中' : '点位模式' }}
             </ElTag>
+            <ElTag v-if="backendGrid.count.value > 0" size="small" type="warning">
+              查询网格 {{ backendGrid.count.value }}
+            </ElTag>
           </div>
         </div>
 
         <div class="mt-3 flex flex-wrap items-center gap-2">
+          <ElButton
+            type="success"
+            size="small"
+            :disabled="isStarted"
+            :loading="isStarted && !isLoaded"
+            @click="loadPoints"
+          >
+            {{ isStarted && !isLoaded ? '加载中…' : isLoaded ? '已加载' : '加载点位数据' }}
+          </ElButton>
           <ElButton type="primary" size="small" :disabled="!isLoaded" @click="beginDraw('rect')">
             矩形框选
           </ElButton>
@@ -564,6 +378,15 @@ onUnmounted(() => {
           >
             多边形框选
           </ElButton>
+          <ElButton
+            type="warning"
+            size="small"
+            :disabled="!isLoaded || backendGrid.isFetching.value"
+            :loading="backendGrid.isFetching.value"
+            @click="beginBoxSelection"
+          >
+            框选查询
+          </ElButton>
           <ElButton size="small" @click="clearSelection">清空框选</ElButton>
           <ElButton size="small" @click="applyBalancedPreset">均衡预设</ElButton>
         </div>
@@ -573,10 +396,17 @@ onUnmounted(() => {
             draw.mode.value === 'none' ? '无' : draw.mode.value === 'rect' ? '矩形' : '多边形'
           }}</span>
           ，选中点位 <span class="font-semibold">{{ selectedPointCount }}</span> 个，网格
-          <span class="font-semibold">{{ gridCellCount }}</span> 个。 网格尺寸约
-          <span class="font-semibold">{{ gridCellSize || '-' }}</span> 米，Zoom
+          <span class="font-semibold">{{ grid.cellCount.value }}</span> 个。 网格尺寸约
+          <span class="font-semibold">{{ grid.cellSize.value || '-' }}</span> 米，Zoom
           <span class="font-semibold">{{ viewport.zoom.value.toFixed(2) }}</span
           >。
+          <template v-if="backendGrid.count.value > 0">
+            查询网格
+            <span class="font-semibold text-indigo-600">{{ backendGrid.count.value }}</span> 个。
+          </template>
+          <template v-if="backendGrid.isFetching.value">
+            <span class="text-amber-600">正在查询网格数据…</span>
+          </template>
         </div>
 
         <ElDivider class="my-3" />

@@ -1,5 +1,5 @@
 import axios from 'axios'
-import type { AxiosError, AxiosInstance, AxiosRequestConfig } from 'axios'
+import type { AxiosError, AxiosInstance, AxiosRequestConfig, AxiosResponse } from 'axios'
 import { ElMessage } from 'element-plus'
 import { useAuth } from '@/composables/useAuth' // Verify this path exists or update accordingly
 
@@ -151,16 +151,46 @@ export function createHttpClient() {
 /** 默认导出一个全局实例 */
 export const http: AxiosInstance = createHttpClient()
 
+type RawConfig = AxiosRequestConfig & { raw: true }
+type NormalConfig = AxiosRequestConfig & { raw?: false }
+
 /** ========== 便捷方法：带类型返回 ========== */
+export function get<T>(
+  url: string,
+  params?: any,
+  config?: RawConfig,
+): Promise<AxiosResponse<ApiResp<T>>>
+export function get<T>(url: string, params?: any, config?: NormalConfig): Promise<T>
 export function get<T>(url: string, params?: any, config?: AxiosRequestConfig) {
-  return http.get<any, T>(url, { params, ...(config || {}) })
+  return http.get<any, any>(url, { params, ...(config || {}) })
 }
+
+export function post<T>(
+  url: string,
+  data?: any,
+  config?: RawConfig,
+): Promise<AxiosResponse<ApiResp<T>>>
+export function post<T>(url: string, data?: any, config?: NormalConfig): Promise<T>
 export function post<T>(url: string, data?: any, config?: AxiosRequestConfig) {
-  return http.post<any, T>(url, data, config)
+  return http.post<any, any>(url, data, config)
 }
+
+export function put<T>(
+  url: string,
+  data?: any,
+  config?: RawConfig,
+): Promise<AxiosResponse<ApiResp<T>>>
+export function put<T>(url: string, data?: any, config?: NormalConfig): Promise<T>
 export function put<T>(url: string, data?: any, config?: AxiosRequestConfig) {
-  return http.put<any, T>(url, data, config)
+  return http.put<any, any>(url, data, config)
 }
+
+export function del<T>(
+  url: string,
+  params?: any,
+  config?: RawConfig,
+): Promise<AxiosResponse<ApiResp<T>>>
+export function del<T>(url: string, params?: any, config?: NormalConfig): Promise<T>
 export function del<T>(url: string, params?: any, config?: AxiosRequestConfig) {
-  return http.delete<any, T>(url, { params, ...(config || {}) })
+  return http.delete<any, any>(url, { params, ...(config || {}) })
 }
