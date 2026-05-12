@@ -1,12 +1,10 @@
-import { ref, shallowRef, unref, watch, type Ref } from 'vue'
+import { onUnmounted, ref, shallowRef, unref, watch, type Ref } from 'vue'
 import Feature from 'ol/Feature'
 import Point from 'ol/geom/Point'
 import HeatmapLayer from 'ol/layer/Heatmap'
 import WebGLVectorLayer from 'ol/layer/WebGLVector'
 import VectorSource from 'ol/source/Vector'
 import { fromLonLat } from 'ol/proj'
-import { useMapEngine } from './engine/context'
-import { onMapReady } from './engine/utils'
 import type { Style } from 'ol/style'
 
 type MaybeRef<T> = T | Ref<T>
@@ -55,8 +53,6 @@ const scheduleChunk: (cb: () => void) => void =
     : (cb) => setTimeout(cb, 0)
 
 export function useOlHeatPoints(options: UseOlHeatPointsOptions) {
-  const engine = useMapEngine()
-
   const showHeat = ref(options.showHeat ?? true)
   const showPoint = ref(options.showPoint ?? false)
   const blur = ref(toInt(options.blur ?? 20, 20))
@@ -66,8 +62,29 @@ export function useOlHeatPoints(options: UseOlHeatPointsOptions) {
 
   const src = new VectorSource()
 
-  const heatLayer = shallowRef<HeatmapLayer | null>(null)
-  const pointLayer = shallowRef<WebGLVectorLayer | null>(null)
+  const heatLayer = shallowRef(
+    new HeatmapLayer({
+      source: src,
+      blur: blur.value,
+      radius: radius.value,
+      gradient: options.gradient,
+      visible: showHeat.value,
+      zIndex: options.zIndexHeat ?? 20,
+    }),
+  )
+  const pointLayer = shallowRef(
+    new WebGLVectorLayer({
+      source: src,
+      visible: showPoint.value,
+      zIndex: options.zIndexPoint ?? 30,
+      style: {
+        'circle-radius': 6,
+        'circle-fill-color': 'rgba(239,68,68,0.92)',
+        'circle-stroke-color': 'rgba(127,29,29,0.9)',
+        'circle-stroke-width': 1.5,
+      },
+    }),
+  )
 
   /** 同步构建 Feature 列表（不入 source） */
   function buildFeatures(pts: HeatPoint[]): Feature[] {
@@ -125,83 +142,49 @@ export function useOlHeatPoints(options: UseOlHeatPointsOptions) {
     }
   }
 
-  const dispose = onMapReady(engine.map, (map) => {
-    const h = new HeatmapLayer({
-      source: src,
-      blur: blur.value,
-      radius: radius.value,
-      gradient: options.gradient,
-    })
-    h.setZIndex(options.zIndexHeat ?? 20)
-    h.setVisible(showHeat.value)
-    heatLayer.value = h
-    map.addLayer(h)
+  if (options.points) {
+    setPoints(unref(options.points) ?? [])
+  }
 
-    // WebGL 点图层：渲染 10w 级别散点无压力
-    const pl = new WebGLVectorLayer({
-      source: src,
-      style: {
-        'circle-radius': 6,
-        'circle-fill-color': 'rgba(239,68,68,0.92)',
-        'circle-stroke-color': 'rgba(127,29,29,0.9)',
-        'circle-stroke-width': 1.5,
-      },
-    })
-    pl.setZIndex(options.zIndexPoint ?? 30)
-    pl.setVisible(showPoint.value)
-    pointLayer.value = pl
-    map.addLayer(pl)
+  const watchers: (() => void)[] = []
 
-    if (options.points) {
-      setPoints(unref(options.points) ?? [])
-    }
-
-    const watchers: (() => void)[] = []
-
-    if (options.points) {
-      watchers.push(
-        watch(
-          () => unref(options.points!),
-          (pts) => pts && setPoints(pts),
-          { deep: false },
-        ),
-      )
-    }
-
+  if (options.points) {
     watchers.push(
       watch(
-        blur,
-        (v) => {
-          const next = Math.max(1, toInt(v, 20))
-          if (next !== v) blur.value = next
-          heatLayer.value?.setBlur(next)
-        },
-        { immediate: true },
+        () => unref(options.points!),
+        (pts) => pts && setPoints(pts),
+        { deep: false },
       ),
-      watch(
-        radius,
-        (v) => {
-          const next = Math.max(1, toInt(v, 12))
-          if (next !== v) radius.value = next
-          heatLayer.value?.setRadius(next)
-        },
-        { immediate: true },
-      ),
-      watch(showHeat, (v) => heatLayer.value?.setVisible(v), { immediate: true }),
-      watch(showPoint, (v) => pointLayer.value?.setVisible(v), { immediate: true }),
     )
+  }
 
-    return () => {
-      watchers.forEach((s) => s())
+  watchers.push(
+    watch(
+      blur,
+      (v) => {
+        const next = Math.max(1, toInt(v, 20))
+        if (next !== v) blur.value = next
+        heatLayer.value.setBlur(next)
+      },
+      { immediate: true },
+    ),
+    watch(
+      radius,
+      (v) => {
+        const next = Math.max(1, toInt(v, 12))
+        if (next !== v) radius.value = next
+        heatLayer.value.setRadius(next)
+      },
+      { immediate: true },
+    ),
+  )
 
-      if (heatLayer.value) map.removeLayer(heatLayer.value)
-      if (pointLayer.value) map.removeLayer(pointLayer.value)
+  function dispose() {
+    watchers.forEach((stop) => stop())
+    src.clear(true)
+  }
 
-      heatLayer.value = null
-      pointLayer.value = null
-      src.clear(true)
-    }
-  })
+  onUnmounted(dispose)
 
   return {
     source: src,

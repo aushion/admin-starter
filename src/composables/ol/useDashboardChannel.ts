@@ -1,7 +1,9 @@
 import { onUnmounted, ref } from 'vue'
 import { createDualChannel } from '@/shared/channel'
+import type { Filters, GeoBoundsPayload } from '@/shared/protocol'
 
 type RawPoint = { id: string; coord3857: [number, number] }
+type DashboardQuery = { requestId: string; filters: Filters }
 
 export function useDashboardChannel() {
   const allPoints = ref<RawPoint[]>([])
@@ -9,6 +11,8 @@ export function useDashboardChannel() {
   const filteredPoints = ref<RawPoint[]>([])
   const highlightedIds = ref<Set<string>>(new Set())
   const pendingCenter = ref<[number, number] | null>(null)
+  const latestQuery = ref<DashboardQuery | null>(null)
+  const dashboardFilters = ref<Filters>({})
 
   function resetToNormal() {
     mode.value = 'normal'
@@ -20,6 +24,15 @@ export function useDashboardChannel() {
   const channel = createDualChannel()
 
   channel.on((msg) => {
+    if (msg.type === 'SYNC_STATE') {
+      dashboardFilters.value = msg.payload.filters
+      return
+    }
+    if (msg.type === 'QUERY') {
+      resetToNormal()
+      latestQuery.value = msg.payload
+      return
+    }
     if (msg.type === 'MAP_SYNC_ROWS') {
       allPoints.value = msg.payload.rows
       if (mode.value !== 'normal') resetToNormal()
@@ -41,6 +54,10 @@ export function useDashboardChannel() {
     }
   })
 
+  function sendBoundsSelect(payload: GeoBoundsPayload) {
+    channel.send({ type: 'MAP_BOUNDS_SELECT', payload })
+  }
+
   // 通知 Dashboard 地图已就绪，触发 MAP_SYNC_ROWS 推送
   channel.send({ type: 'MAP_READY' })
 
@@ -48,5 +65,14 @@ export function useDashboardChannel() {
     channel.close()
   })
 
-  return { allPoints, mode, filteredPoints, highlightedIds, pendingCenter }
+  return {
+    allPoints,
+    mode,
+    filteredPoints,
+    highlightedIds,
+    pendingCenter,
+    latestQuery,
+    dashboardFilters,
+    sendBoundsSelect,
+  }
 }

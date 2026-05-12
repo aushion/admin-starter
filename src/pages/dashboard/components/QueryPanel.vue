@@ -97,6 +97,10 @@ const basicSchema: ProFormItem[] = [
     valueEnum: { north: '北区', south: '南区', west: '西区' },
   },
   { field: 'owner', label: '负责人', valueType: 'text', placeholder: '负责人姓名' },
+  { field: 'longitudeMin', label: '最小经度', valueType: 'text', placeholder: '如 115.80' },
+  { field: 'longitudeMax', label: '最大经度', valueType: 'text', placeholder: '如 116.90' },
+  { field: 'latitudeMin', label: '最小纬度', valueType: 'text', placeholder: '如 39.40' },
+  { field: 'latitudeMax', label: '最大纬度', valueType: 'text', placeholder: '如 40.20' },
 ]
 
 const advancedSchema: ProFormItem[] = [
@@ -127,6 +131,10 @@ const advancedSchema: ProFormItem[] = [
   },
   { field: 'startedAt', label: '开始时间', valueType: 'datetime' },
   { field: 'endedAt', label: '结束时间', valueType: 'datetime' },
+  { field: 'longitudeMin', label: '最小经度', valueType: 'text', placeholder: '如 115.80' },
+  { field: 'longitudeMax', label: '最大经度', valueType: 'text', placeholder: '如 116.90' },
+  { field: 'latitudeMin', label: '最小纬度', valueType: 'text', placeholder: '如 39.40' },
+  { field: 'latitudeMax', label: '最大纬度', valueType: 'text', placeholder: '如 40.20' },
 ]
 
 function onSubmitBasic(values: BasicQueryForm) {

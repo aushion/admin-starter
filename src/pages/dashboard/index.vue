@@ -85,7 +85,7 @@ import type { ProColumn } from '@/components/ProTable'
 import QueryPanel from './components/QueryPanel.vue'
 import TablePane from './components/TablePane.vue'
 import { createDualChannel } from '@/shared/channel'
-import type { DualMsg } from '@/shared/protocol'
+import type { DualMsg, GeoBoundsPayload } from '@/shared/protocol'
 import type {
   AdvancedQueryForm,
   BasicQueryForm,
@@ -99,6 +99,7 @@ import type {
 } from './types'
 import type { ContextMenuItem } from '@/components/ContextMenu'
 import { useDashboardLayoutStore } from '@/store/dashboardLayout'
+import { fetchDashboardRows } from '@/services/dashboard'
 
 type TableState = {
   title: string
@@ -140,31 +141,17 @@ function createTableState(defaultTitle: string): TableState {
   }
 }
 
-const ALL_ROWS: DeviceRow[] = Array.from({ length: 1000 }).map((_, i) => {
-  const id = i + 1
-  const zone: ZoneCode = id % 3 === 0 ? 'west' : id % 2 === 0 ? 'south' : 'north'
-  const status: RowStatus = id % 2 ? 'online' : 'offline'
-  const level = (['P1', 'P2', 'P3'] as const)[id % 3] ?? 'P1'
-  const source = (['manual', 'api', 'import'] as const)[id % 3] ?? 'manual'
-
-  return {
-    id,
-    name: `设备-${String(id).padStart(4, '0')}`,
-    zone,
-    status,
-    owner: `owner-${(id % 20) + 1}`,
-    level,
-    source,
-    coord3857: [12958412 + id * 30, 4852030 + id * 20],
-    updatedAt: `2026-03-${String((id % 28) + 1).padStart(2, '0')} 10:${String(id % 60).padStart(2, '0')}:00`,
-  }
-})
+const DASHBOARD_QUERY_LIMIT = 500
 
 const basicFormModel = reactive<BasicQueryForm>({
   keyword: '',
   status: undefined,
   zone: undefined,
   owner: '',
+  longitudeMin: undefined,
+  longitudeMax: undefined,
+  latitudeMin: undefined,
+  latitudeMax: undefined,
 })
 
 const advancedFormModel = reactive<AdvancedQueryForm>({
@@ -175,6 +162,10 @@ const advancedFormModel = reactive<AdvancedQueryForm>({
   source: undefined,
   startedAt: undefined,
   endedAt: undefined,
+  longitudeMin: undefined,
+  longitudeMax: undefined,
+  latitudeMin: undefined,
+  latitudeMax: undefined,
 })
 
 const ZONE_LABELS: Record<ZoneCode, string> = { north: '北区', south: '南区', west: '西区' }
@@ -206,7 +197,7 @@ const state = reactive({
   advancedTable: createTableState('扩展筛选结果表'),
   statsTable: {
     title: '分区统计汇总表',
-    rows: buildStatsRows(ALL_ROWS),
+    rows: buildStatsRows([]),
     loading: false,
     collapsed: false,
   } as StatsTableState,
@@ -227,10 +218,6 @@ const mapMockState = reactive({
   latestFilters: '',
   latestFocus: '',
 })
-
-function delay(ms: number) {
-  return new Promise((resolve) => setTimeout(resolve, ms))
-}
 
 function toChannelSafe<T>(value: T): T {
   const raw = toRaw(value as any)
@@ -254,12 +241,28 @@ function getTableState(tab: QueryTabKey) {
   return tab === 'basic' ? state.basicTable : state.advancedTable
 }
 
+function normalizeOptionalNumber(value: unknown): number | undefined {
+  if (value === '' || value == null) return undefined
+  const n = Number(value)
+  return Number.isFinite(n) ? n : undefined
+}
+
+function normalizeGeoBounds(input: QueryForm) {
+  return {
+    longitudeMin: normalizeOptionalNumber(input.longitudeMin),
+    longitudeMax: normalizeOptionalNumber(input.longitudeMax),
+    latitudeMin: normalizeOptionalNumber(input.latitudeMin),
+    latitudeMax: normalizeOptionalNumber(input.latitudeMax),
+  }
+}
+
 function normalizeBasicFilters(input: BasicQueryForm): BasicQueryForm {
   return {
     keyword: (input.keyword || '').trim(),
     status: input.status || undefined,
     zone: input.zone || undefined,
     owner: (input.owner || '').trim(),
+    ...normalizeGeoBounds(input),
   }
 }
 
@@ -272,44 +275,13 @@ function normalizeAdvancedFilters(input: AdvancedQueryForm): AdvancedQueryForm {
     source: input.source || undefined,
     startedAt: input.startedAt || undefined,
     endedAt: input.endedAt || undefined,
+    ...normalizeGeoBounds(input),
   }
 }
 
 function normalizeFiltersByTab(tab: QueryTabKey, value: QueryForm) {
   if (tab === 'basic') return normalizeBasicFilters(value as BasicQueryForm)
   return normalizeAdvancedFilters(value as AdvancedQueryForm)
-}
-
-function queryRowsBasic(filters: BasicQueryForm) {
-  const keyword = (filters.keyword || '').toLowerCase()
-  const owner = (filters.owner || '').toLowerCase()
-
-  return ALL_ROWS.filter((row) => {
-    const hitKeyword =
-      !keyword || row.name.toLowerCase().includes(keyword) || String(row.id).includes(keyword)
-    const hitStatus = !filters.status || row.status === filters.status
-    const hitZone = !filters.zone || row.zone === filters.zone
-    const hitOwner = !owner || row.owner.toLowerCase().includes(owner)
-    return hitKeyword && hitStatus && hitZone && hitOwner
-  })
-}
-
-function queryRowsAdvanced(filters: AdvancedQueryForm) {
-  const keyword = (filters.keyword || '').toLowerCase()
-  const start = filters.startedAt || ''
-  const end = filters.endedAt || ''
-
-  return ALL_ROWS.filter((row) => {
-    const hitKeyword =
-      !keyword || row.name.toLowerCase().includes(keyword) || String(row.id).includes(keyword)
-    const hitStatus = !filters.status || row.status === filters.status
-    const hitZone = !filters.zone || row.zone === filters.zone
-    const hitLevel = !filters.level || row.level === filters.level
-    const hitSource = !filters.source || row.source === filters.source
-    const hitStart = !start || row.updatedAt >= start
-    const hitEnd = !end || row.updatedAt <= end
-    return hitKeyword && hitStatus && hitZone && hitLevel && hitSource && hitStart && hitEnd
-  })
 }
 
 function buildBasicColumns(filters: BasicQueryForm): ProColumn<DeviceRow>[] {
@@ -391,11 +363,6 @@ function buildTitle(tab: QueryTabKey, filters: QueryForm) {
   return '扩展筛选结果表'
 }
 
-function computeRowsByTab(tab: QueryTabKey, filters: QueryForm) {
-  if (tab === 'basic') return queryRowsBasic(filters as BasicQueryForm)
-  return queryRowsAdvanced(filters as AdvancedQueryForm)
-}
-
 function computeColumnsByTab(tab: QueryTabKey, filters: QueryForm) {
   if (tab === 'basic') return buildBasicColumns(filters as BasicQueryForm)
   return buildAdvancedColumns(filters as AdvancedQueryForm)
@@ -424,26 +391,49 @@ function syncStateToMap() {
   pageChannel.send({ type: 'SYNC_STATE', payload: { filters: payloadFilters } })
 }
 
+function sendQueryToMap(tab: QueryTabKey, filters: QueryForm, reason: string) {
+  pageChannel.send({
+    type: 'QUERY',
+    payload: {
+      requestId: `${Date.now()}-${tab}-${reason}`,
+      filters: {
+        activeTab: tab,
+        ...toChannelSafe(filters as Record<string, unknown>),
+      },
+    },
+  })
+}
+
 async function dispatchQuery(tab: QueryTabKey, rawFilters: QueryForm, reason: string) {
   const table = getTableState(tab)
   table.filters = normalizeFiltersByTab(tab, rawFilters)
   table.loading = true
+  state.statsTable.loading = true
 
   state.lastMapEvent = `Page 调度查询: ${reason} (${tab})`
 
-  await delay(80)
-
-  const rows = computeRowsByTab(tab, table.filters)
-  table.rows = rows
-  table.selectedKeys = table.selectedKeys.filter((key) =>
-    rows.some((row) => String(row.id) === String(key)),
-  )
-  table.columns = computeColumnsByTab(tab, table.filters)
-  table.title = buildTitle(tab, table.filters)
-  table.collapsed = rows.length === 0
-  table.loading = false
-
-  syncStateToMap()
+  try {
+    const result = await fetchDashboardRows({
+      tab,
+      filters: table.filters,
+      limit: DASHBOARD_QUERY_LIMIT,
+    })
+    const rows = result.rows
+    table.rows = rows
+    table.selectedKeys = table.selectedKeys.filter((key) =>
+      rows.some((row) => String(row.id) === String(key)),
+    )
+    table.columns = computeColumnsByTab(tab, table.filters)
+    table.title = `${buildTitle(tab, table.filters)}（${rows.length}/${result.total}）`
+    table.collapsed = rows.length === 0
+    state.statsTable.rows = buildStatsRows(rows)
+    state.statsTable.collapsed = rows.length === 0
+    sendQueryToMap(tab, table.filters, reason)
+  } finally {
+    table.loading = false
+    state.statsTable.loading = false
+    syncStateToMap()
+  }
 }
 
 function onActiveTabChange(tab: QueryTabKey) {
@@ -508,23 +498,44 @@ function onTableSelectionChange(payload: {
   syncStateToMap()
 }
 
+function roundCoord(value: number): number {
+  return Number(value.toFixed(6))
+}
+
+function applyBoundsToCurrentForm(bounds: GeoBoundsPayload) {
+  const normalizedBounds = {
+    longitudeMin: roundCoord(Math.min(bounds.longitudeMin, bounds.longitudeMax)),
+    longitudeMax: roundCoord(Math.max(bounds.longitudeMin, bounds.longitudeMax)),
+    latitudeMin: roundCoord(Math.min(bounds.latitudeMin, bounds.latitudeMax)),
+    latitudeMax: roundCoord(Math.max(bounds.latitudeMin, bounds.latitudeMax)),
+  }
+
+  state.lastMapEvent = `收到地图框选范围：${normalizedBounds.longitudeMin},${normalizedBounds.latitudeMin} - ${normalizedBounds.longitudeMax},${normalizedBounds.latitudeMax}`
+
+  if (state.activeTab === 'basic') {
+    Object.assign(basicFormModel, normalizedBounds)
+    void dispatchQuery('basic', { ...basicFormModel }, 'MAP_BOUNDS_SELECT')
+    return
+  }
+
+  Object.assign(advancedFormModel, normalizedBounds)
+  void dispatchQuery('advanced', { ...advancedFormModel }, 'MAP_BOUNDS_SELECT')
+}
+
 function onPageReceiveMapMessage(msg: DualMsg) {
   if (msg.type === 'MAP_READY') {
     state.mapReady = true
-    state.lastMapEvent = '收到 MAP_READY，已下发 SYNC_STATE + MAP_SYNC_ROWS'
+    state.lastMapEvent = '收到 MAP_READY，已下发 SYNC_STATE + QUERY'
     syncStateToMap()
-    pageChannel.send({
-      type: 'MAP_SYNC_ROWS',
-      payload: {
-        rows: ALL_ROWS.map((r) => ({ id: String(r.id), coord3857: r.coord3857 })),
-      },
-    })
+    const table = getTableState(state.activeTab)
+    sendQueryToMap(state.activeTab, table.filters, 'MAP_READY')
     return
   }
 
   if (msg.type === 'MAP_SELECT') {
     const selectedId = Number(msg.payload.id)
-    const hit = ALL_ROWS.find((row) => row.id === selectedId)
+    const allVisibleRows = [...state.basicTable.rows, ...state.advancedTable.rows]
+    const hit = allVisibleRows.find((row) => row.id === selectedId)
     if (!hit) return
 
     state.lastMapEvent = `收到 MAP_SELECT: ${selectedId}，由 Page 反向调度查询`
@@ -534,7 +545,7 @@ function onPageReceiveMapMessage(msg: DualMsg) {
       basicFormModel.status = undefined
       basicFormModel.zone = undefined
       basicFormModel.owner = ''
-      dispatchQuery('basic', { ...basicFormModel }, 'MAP_SELECT')
+      void dispatchQuery('basic', { ...basicFormModel }, 'MAP_SELECT')
       return
     }
 
@@ -543,7 +554,12 @@ function onPageReceiveMapMessage(msg: DualMsg) {
     advancedFormModel.zone = undefined
     advancedFormModel.level = undefined
     advancedFormModel.source = undefined
-    dispatchQuery('advanced', { ...advancedFormModel }, 'MAP_SELECT')
+    void dispatchQuery('advanced', { ...advancedFormModel }, 'MAP_SELECT')
+    return
+  }
+
+  if (msg.type === 'MAP_BOUNDS_SELECT') {
+    applyBoundsToCurrentForm(msg.payload)
   }
 }
 
@@ -603,6 +619,7 @@ onMounted(() => {
   state.basicTable.collapsed = true
   state.advancedTable.collapsed = true
   syncStateToMap()
+  void dispatchQuery('basic', { ...basicFormModel }, 'INITIAL_LOAD')
 })
 
 onUnmounted(() => {

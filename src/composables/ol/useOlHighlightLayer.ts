@@ -1,11 +1,9 @@
-import { shallowRef, watch, type Ref } from 'vue'
+import { onUnmounted, ref, shallowRef, watch, type Ref } from 'vue'
 import Feature from 'ol/Feature'
 import Point from 'ol/geom/Point'
 import VectorLayer from 'ol/layer/Vector'
 import VectorSource from 'ol/source/Vector'
 import { Fill, RegularShape, Stroke, Style } from 'ol/style'
-import { useMapEngine } from './engine/context'
-import { onMapReady } from './engine/utils'
 
 interface Locatable {
   id: string | number
@@ -35,50 +33,54 @@ export function useOlHighlightLayer(
   getStore: () => Locatable[],
   options?: UseOlHighlightLayerOptions,
 ) {
-  const engine = useMapEngine()
-
   const source = new VectorSource()
-  const layer = shallowRef<VectorLayer<VectorSource> | null>(null)
-
-  onMapReady(engine.map, (map) => {
-    const inst = new VectorLayer({
+  const visible = ref(true)
+  const layerVisible = ref(false)
+  const layer = shallowRef(
+    new VectorLayer({
       source,
       zIndex: options?.zIndex ?? 50,
       visible: false,
       style: options?.style ?? DEFAULT_STYLE,
-    })
-    layer.value = inst
-    map.addLayer(inst)
+    }),
+  )
 
-    const stop = watch(
-      [mode, highlightedIds],
-      ([m, ids]) => {
-        if (m !== 'highlight' || ids.size === 0) {
-          source.clear(true)
-          inst.setVisible(false)
-          return
-        }
-        const features = getStore()
-          .filter((p) => ids.has(String(p.id)))
-          .map((p) => {
-            const f = new Feature({ geometry: new Point([p.x3857, p.y3857]) })
-            f.setId(p.id)
-            return f
-          })
+  function syncVisible() {
+    layerVisible.value =
+      visible.value && source.getFeatures().length > 0 && mode.value === 'highlight'
+  }
+
+  const stop = watch(
+    [mode, highlightedIds],
+    ([m, ids]) => {
+      if (m !== 'highlight' || ids.size === 0) {
         source.clear(true)
-        source.addFeatures(features)
-        inst.setVisible(true)
-      },
-      { immediate: true, deep: false },
-    )
-
-    return () => {
-      stop()
-      map.removeLayer(inst)
-      layer.value = null
+        syncVisible()
+        return
+      }
+      const features = getStore()
+        .filter((p) => ids.has(String(p.id)))
+        .map((p) => {
+          const f = new Feature({ geometry: new Point([p.x3857, p.y3857]) })
+          f.setId(p.id)
+          return f
+        })
       source.clear(true)
-    }
+      source.addFeatures(features)
+      syncVisible()
+    },
+    { immediate: true, deep: false },
+  )
+
+  const stopVisible = watch(visible, () => {
+    syncVisible()
   })
 
-  return { layer, source }
+  onUnmounted(() => {
+    stop()
+    stopVisible()
+    source.clear(true)
+  })
+
+  return { layer, source, visible, layerVisible, syncVisible }
 }

@@ -1,12 +1,10 @@
-import { ref, shallowRef, type Ref, type ShallowRef } from 'vue'
+import { onUnmounted, ref, shallowRef, type Ref, type ShallowRef } from 'vue'
 import Feature from 'ol/Feature'
 import { fromExtent as polygonFromExtent } from 'ol/geom/Polygon'
 import VectorLayer from 'ol/layer/Vector'
 import VectorSource from 'ol/source/Vector'
 import { Fill, Stroke, Style } from 'ol/style'
 import type Geometry from 'ol/geom/Geometry'
-import { useMapEngine } from './engine/context'
-import { onMapReady } from './engine/utils'
 
 export interface GridPoint {
   x3857: number
@@ -33,15 +31,22 @@ export function useOlGridLayer(
   const GRID_BASE_PIXEL = options?.basePixel ?? 56
   const HEAT_HIDE_ZOOM = options?.heatHideZoom ?? 13.5
 
-  const engine = useMapEngine()
-
   const cellSize = ref(0)
   const cellCount = ref(0)
   const maxCount = ref(1)
+  const visible = ref(true)
+  const layerVisible = ref(false)
 
   const source = new VectorSource()
-  const layer = shallowRef<VectorLayer<VectorSource> | null>(null)
   const styleCache = new Map<number, Style>()
+  const layer = shallowRef(
+    new VectorLayer({
+      source,
+      zIndex: options?.zIndex ?? 34,
+      visible: false,
+      style: (feature) => styleByCount(Number(feature.get('count') || 0)),
+    }),
+  )
 
   function fillColor(ratio: number): string {
     const r = Math.max(0, Math.min(1, ratio))
@@ -126,29 +131,18 @@ export function useOlGridLayer(
     cellSize.value = 0
     maxCount.value = 1
     styleCache.clear()
-    layer.value?.setVisible(false)
+    layerVisible.value = false
   }
 
   function syncVisible(hasSelection: boolean): void {
-    layer.value?.setVisible(hasSelection && zoom.value < HEAT_HIDE_ZOOM && cellCount.value > 0)
+    layerVisible.value =
+      visible.value && hasSelection && zoom.value < HEAT_HIDE_ZOOM && cellCount.value > 0
   }
 
-  onMapReady(engine.map, (map) => {
-    const inst = new VectorLayer({
-      source,
-      zIndex: options?.zIndex ?? 34,
-      visible: false,
-      style: (feature) => styleByCount(Number(feature.get('count') || 0)),
-    })
-    layer.value = inst
-    map.addLayer(inst)
-
-    return () => {
-      map.removeLayer(inst)
-      layer.value = null
-      source.clear(true)
-    }
+  onUnmounted(() => {
+    source.clear(true)
+    styleCache.clear()
   })
 
-  return { cellSize, cellCount, layer, rebuild, clear, syncVisible }
+  return { cellSize, cellCount, layer, visible, layerVisible, rebuild, clear, syncVisible }
 }

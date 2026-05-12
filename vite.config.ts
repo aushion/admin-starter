@@ -22,6 +22,40 @@ type MockHandler = {
   response: (body: Record<string, any>, req?: IncomingMessage) => MockResponse
 }
 
+type RowStatus = 'online' | 'offline'
+type ZoneCode = 'north' | 'south' | 'west'
+type PriorityLevel = 'P1' | 'P2' | 'P3'
+type SourceType = 'manual' | 'api' | 'import'
+
+type MockPoint = {
+  id: string
+  name: string
+  zone: ZoneCode
+  status: RowStatus
+  owner: string
+  level: PriorityLevel
+  source: SourceType
+  updatedAt: string
+  lon: number
+  lat: number
+  coord3857: [number, number]
+  weight: number
+}
+
+type MockDeviceRow = {
+  id: number
+  name: string
+  zone: ZoneCode
+  status: RowStatus
+  owner: string
+  level: PriorityLevel
+  source: SourceType
+  lon: number
+  lat: number
+  coord3857: [number, number]
+  updatedAt: string
+}
+
 // ========== Mock 用户数据 ==========
 type MockUser = {
   id: string
@@ -72,6 +106,111 @@ const MOCK_PASSWORDS: Record<string, string> = {
 
 function findUserByToken(token: string): MockUser | undefined {
   return Object.values(MOCK_USERS).find((u) => u.token === token)
+}
+
+const MAP_TOTAL = 100_000
+const DASHBOARD_DEFAULT_LIMIT = 500
+const MAP_CENTER_LON = 116.397
+const MAP_CENTER_LAT = 39.908
+const MAP_LON_RANGE = 2.4
+const MAP_LAT_RANGE = 1.8
+
+function random01(seed: number): number {
+  const x = Math.sin(seed) * 10000
+  return x - Math.floor(x)
+}
+
+function lonLatTo3857(lon: number, lat: number): [number, number] {
+  const x = (lon * 20037508.34) / 180
+  const y = (Math.log(Math.tan(((90 + lat) * Math.PI) / 360)) / (Math.PI / 180) / 180) * 20037508.34
+  return [x, y]
+}
+
+function createPoint(id: number): MockPoint {
+  const lon = MAP_CENTER_LON + (random01(id * 12.9898) * 2 - 1) * (MAP_LON_RANGE / 2)
+  const lat = MAP_CENTER_LAT + (random01(id * 78.233) * 2 - 1) * (MAP_LAT_RANGE / 2)
+  const zone: ZoneCode = id % 3 === 0 ? 'west' : id % 2 === 0 ? 'south' : 'north'
+  const status: RowStatus = id % 2 ? 'online' : 'offline'
+  const level = (['P1', 'P2', 'P3'] as const)[id % 3] ?? 'P1'
+  const source = (['manual', 'api', 'import'] as const)[id % 3] ?? 'manual'
+
+  return {
+    id: String(id),
+    name: `设备-${String(id).padStart(4, '0')}`,
+    zone,
+    status,
+    owner: `owner-${(id % 20) + 1}`,
+    level,
+    source,
+    updatedAt: `2026-03-${String((id % 28) + 1).padStart(2, '0')} 10:${String(id % 60).padStart(2, '0')}:00`,
+    lon,
+    lat,
+    coord3857: lonLatTo3857(lon, lat),
+    weight: 0.25 + random01(id * 31.4159) * 0.75,
+  }
+}
+
+const MOCK_POINTS: MockPoint[] = Array.from({ length: MAP_TOTAL }, (_, index) =>
+  createPoint(index + 1),
+)
+
+const MOCK_DEVICE_ROWS: MockDeviceRow[] = MOCK_POINTS.slice(0, DASHBOARD_DEFAULT_LIMIT).map(
+  (point) => ({
+    id: Number(point.id),
+    name: point.name,
+    zone: point.zone,
+    status: point.status,
+    owner: point.owner,
+    level: point.level,
+    source: point.source,
+    lon: point.lon,
+    lat: point.lat,
+    coord3857: point.coord3857,
+    updatedAt: point.updatedAt,
+  }),
+)
+
+function numberOrUndefined(value: unknown): number | undefined {
+  if (value === '' || value == null) return undefined
+  const n = Number(value)
+  return Number.isFinite(n) ? n : undefined
+}
+
+function matchesFilters(row: MockPoint | MockDeviceRow, filters: Record<string, unknown>): boolean {
+  const keyword = String(filters.keyword || '')
+    .trim()
+    .toLowerCase()
+  const owner = String(filters.owner || '')
+    .trim()
+    .toLowerCase()
+  const lonMin = numberOrUndefined(filters.longitudeMin)
+  const lonMax = numberOrUndefined(filters.longitudeMax)
+  const latMin = numberOrUndefined(filters.latitudeMin)
+  const latMax = numberOrUndefined(filters.latitudeMax)
+  const status = typeof filters.status === 'string' ? filters.status : ''
+  const zone = typeof filters.zone === 'string' ? filters.zone : ''
+  const level = typeof filters.level === 'string' ? filters.level : ''
+  const source = typeof filters.source === 'string' ? filters.source : ''
+  const startedAt = typeof filters.startedAt === 'string' ? filters.startedAt : ''
+  const endedAt = typeof filters.endedAt === 'string' ? filters.endedAt : ''
+  const lon = 'lon' in row ? row.lon : undefined
+  const lat = 'lat' in row ? row.lat : undefined
+
+  if (keyword && !row.name.toLowerCase().includes(keyword) && !String(row.id).includes(keyword)) {
+    return false
+  }
+  if (status && row.status !== status) return false
+  if (zone && row.zone !== zone) return false
+  if (owner && !row.owner.toLowerCase().includes(owner)) return false
+  if (level && row.level !== level) return false
+  if (source && row.source !== source) return false
+  if (startedAt && row.updatedAt < startedAt) return false
+  if (endedAt && row.updatedAt > endedAt) return false
+  if (lon != null && lonMin != null && lon < lonMin) return false
+  if (lon != null && lonMax != null && lon > lonMax) return false
+  if (lat != null && latMin != null && lat < latMin) return false
+  if (lat != null && latMax != null && lat > latMax) return false
+  return true
 }
 
 // ========== Mock handlers（新增接口在此追加） ==========
@@ -125,58 +264,52 @@ const mockHandlers: MockHandler[] = [
       return { code: 0, message: 'ok', data: null }
     },
   },
+  {
+    method: 'POST',
+    url: '/dashboard/query',
+    delay: 120,
+    response(body) {
+      const filters = (body.filters || {}) as Record<string, unknown>
+      const limit = Math.max(1, Math.min(500, Number(body.limit) || DASHBOARD_DEFAULT_LIMIT))
+      const rows = MOCK_DEVICE_ROWS.filter((row) => matchesFilters(row, filters))
+
+      return {
+        code: 0,
+        message: 'ok',
+        data: {
+          rows: rows.slice(0, limit),
+          total: rows.length,
+        },
+      }
+    },
+  },
+  {
+    method: 'POST',
+    url: '/map/points',
+    delay: 160,
+    response(body) {
+      const filters = (body.filters || {}) as Record<string, unknown>
+      const limit = Math.max(1, Math.min(MAP_TOTAL, Number(body.limit) || MAP_TOTAL))
+      const rows = MOCK_POINTS.filter((row) => matchesFilters(row, filters)).slice(0, limit)
+
+      return {
+        code: 0,
+        message: 'ok',
+        data: {
+          rows: rows.map((row) => ({
+            id: row.id,
+            lon: row.lon,
+            lat: row.lat,
+            coord3857: row.coord3857,
+            weight: row.weight,
+            type: row.zone,
+          })),
+          total: rows.length,
+        },
+      }
+    },
+  },
 ]
-
-// ========== SSE Mock：/api/stream/map-points ==========
-// 北京中心 3857: [12958412, 4852030]，随机散布 ±120km
-const SSE_TOTAL = 100_000
-const SSE_BATCH = 10_000
-const SSE_CENTER_X = 12_958_412
-const SSE_CENTER_Y = 4_852_030
-const SSE_RANGE = 120_000 // meters in 3857
-
-function makeBatch(start: number, size: number): string {
-  const rows: { id: string; coord3857: [number, number] }[] = []
-  for (let i = 0; i < size; i++) {
-    const idx = start + i
-    rows.push({
-      id: String(idx),
-      coord3857: [
-        SSE_CENTER_X + (Math.random() * 2 - 1) * SSE_RANGE,
-        SSE_CENTER_Y + (Math.random() * 2 - 1) * SSE_RANGE,
-      ],
-    })
-  }
-  const done = start + size >= SSE_TOTAL
-  return `data: ${JSON.stringify({ rows, total: SSE_TOTAL, done })}\n\n`
-}
-
-function handleSseStream(res: ServerResponse) {
-  res.setHeader('Content-Type', 'text/event-stream; charset=utf-8')
-  res.setHeader('Cache-Control', 'no-cache')
-  res.setHeader('Connection', 'keep-alive')
-  res.setHeader('Access-Control-Allow-Origin', '*')
-  res.statusCode = 200
-
-  let sent = 0
-  const batchCount = Math.ceil(SSE_TOTAL / SSE_BATCH)
-
-  function sendNext() {
-    if (sent >= SSE_TOTAL) return
-    const size = Math.min(SSE_BATCH, SSE_TOTAL - sent)
-    res.write(makeBatch(sent, size))
-    sent += size
-    if (sent < SSE_TOTAL) {
-      setTimeout(sendNext, 300) // 每批间隔 300ms，模拟网络延迟
-    } else {
-      res.end()
-    }
-  }
-
-  // suppress unused warning
-  void batchCount
-  sendNext()
-}
 
 // ========== Vite 插件 ==========
 function mockPlugin(): Plugin {
@@ -186,12 +319,6 @@ function mockPlugin(): Plugin {
     configureServer(server) {
       server.middlewares.use((req: IncomingMessage, res: ServerResponse, next: () => void) => {
         if (!req.url?.startsWith('/api/')) return next()
-
-        // SSE 流式接口单独处理
-        if (req.url === '/api/stream/map-points') {
-          handleSseStream(res)
-          return
-        }
 
         // '/api/auth/login' → '/auth/login'（保留 leading slash）
         const plainPath = req.url.replace(/^\/api/, '').split('?')[0]

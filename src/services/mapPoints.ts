@@ -1,28 +1,33 @@
+import { post } from '@/api/http'
 import type { Filters } from '@/shared/protocol'
 
 export type PointDTO = {
   id: string
   lon: number // EPSG:4326
   lat: number // EPSG:4326
+  coord3857: [number, number]
+  weight?: number
   type?: string
 }
 
 export async function fetchPoints(params: {
   filters: Filters
-  bbox4326: [number, number, number, number]
+  limit?: number
   signal?: AbortSignal
 }): Promise<PointDTO[]> {
-  // 你改成你们真实接口
-  const res = await fetch('/api/map/points', {
-    method: 'POST',
-    headers: { 'Content-Type': 'application/json' },
-    signal: params.signal,
-    body: JSON.stringify({
+  const result = await post<{ rows: PointDTO[]; total: number }>(
+    '/map/points',
+    {
       filters: params.filters,
-      bbox: params.bbox4326,
-    }),
-  })
+      limit: params.limit ?? 100_000,
+    },
+    {
+      signal: params.signal,
+      dedupe: false,
+      silent: true,
+      timeout: 60_000,
+    },
+  )
 
-  if (!res.ok) throw new Error(`fetchPoints failed: ${res.status}`)
-  return res.json()
+  return result.rows
 }

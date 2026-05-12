@@ -4,12 +4,19 @@ export type QueryTabKey = 'basic' | 'advanced'
 export type PriorityLevel = 'P1' | 'P2' | 'P3'
 export type SourceType = 'manual' | 'api' | 'import'
 
+export type GeoBoundsFields = {
+  longitudeMin?: number
+  longitudeMax?: number
+  latitudeMin?: number
+  latitudeMax?: number
+}
+
 export type BasicQueryForm = {
   keyword?: string
   status?: RowStatus
   zone?: ZoneCode
   owner?: string
-}
+} & GeoBoundsFields
 
 export type AdvancedQueryForm = {
   keyword?: string
@@ -19,7 +26,7 @@ export type AdvancedQueryForm = {
   source?: SourceType
   startedAt?: string
   endedAt?: string
-}
+} & GeoBoundsFields
 
 export type QueryForm = BasicQueryForm | AdvancedQueryForm
 
@@ -32,6 +39,8 @@ export type DeviceRow = {
   level: PriorityLevel
   source: SourceType
   coord3857: [number, number]
+  lon?: number
+  lat?: number
   updatedAt: string
 }
 

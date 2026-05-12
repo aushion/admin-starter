@@ -1,12 +1,10 @@
-import { ref, shallowRef } from 'vue'
+import { onUnmounted, ref, shallowRef } from 'vue'
 import Feature from 'ol/Feature'
 import { fromExtent as polygonFromExtent } from 'ol/geom/Polygon'
 import VectorLayer from 'ol/layer/Vector'
 import VectorSource from 'ol/source/Vector'
 import { fromLonLat } from 'ol/proj'
 import { Fill, Stroke, Style } from 'ol/style'
-import { useMapEngine } from './engine/context'
-import { onMapReady } from './engine/utils'
 
 export interface BackendGrid {
   longitudeMin: number
@@ -22,18 +20,32 @@ export interface UseOlBackendGridLayerOptions {
 }
 
 export function useOlBackendGridLayer(options: UseOlBackendGridLayerOptions) {
-  const engine = useMapEngine()
-
   const count = ref(0)
   const isFetching = ref(false)
-  const layer = shallowRef<VectorLayer<VectorSource> | null>(null)
+  const visible = ref(true)
+  const layerVisible = ref(false)
   const source = new VectorSource()
+  const layer = shallowRef(
+    new VectorLayer({
+      source,
+      zIndex: options.zIndex ?? 36,
+      visible: false,
+      style: new Style({
+        fill: new Fill({ color: 'rgba(99, 102, 241, 0.32)' }),
+        stroke: new Stroke({ color: 'rgba(67, 56, 202, 0.85)', width: 1.4 }),
+      }),
+    }),
+  )
+
+  function syncVisible(): void {
+    layerVisible.value = visible.value && count.value > 0
+  }
 
   function render(grids: BackendGrid[]): void {
     source.clear(true)
     if (!grids.length) {
-      layer.value?.setVisible(false)
       count.value = 0
+      syncVisible()
       return
     }
     const features = grids.map((g) => {
@@ -45,14 +57,14 @@ export function useOlBackendGridLayer(options: UseOlBackendGridLayerOptions) {
       return f
     })
     source.addFeatures(features)
-    layer.value?.setVisible(true)
     count.value = features.length
+    syncVisible()
   }
 
   function clear(): void {
     source.clear(true)
-    layer.value?.setVisible(false)
     count.value = 0
+    syncVisible()
   }
 
   async function query(extent: [number, number, number, number]): Promise<void> {
@@ -65,25 +77,9 @@ export function useOlBackendGridLayer(options: UseOlBackendGridLayerOptions) {
     }
   }
 
-  onMapReady(engine.map, (map) => {
-    const inst = new VectorLayer({
-      source,
-      zIndex: options.zIndex ?? 36,
-      visible: false,
-      style: new Style({
-        fill: new Fill({ color: 'rgba(99, 102, 241, 0.32)' }),
-        stroke: new Stroke({ color: 'rgba(67, 56, 202, 0.85)', width: 1.4 }),
-      }),
-    })
-    layer.value = inst
-    map.addLayer(inst)
-
-    return () => {
-      map.removeLayer(inst)
-      layer.value = null
-      source.clear(true)
-    }
+  onUnmounted(() => {
+    source.clear(true)
   })
 
-  return { count, isFetching, layer, query, clear }
+  return { count, isFetching, layer, visible, layerVisible, syncVisible, query, clear }
 }
